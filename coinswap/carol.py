@@ -39,24 +39,64 @@ class CoinSwapCarol(CoinSwapParticipant):
     ========SETUP PHASE===============================
     State 2: TX0id, H(x), TX2sig received from Alice.
     State 3: TX1id, TX2sig, TX3sig sent to Alice.
-    State 4: TX0 seen confirmed.
+    State 4: TX3 sig received.
+    State 5: TX0 seen confirmed.
     State 5: TX1 broadcast.
+    State 6: TX1 seen confirmed.
     ==================================================
     
     ========REDEEM PHASE==============================
-    State 6: TX1 confirmed and X received.
-    State 7: Sent TX4 sig.
-    State 8: Tx5 sig received valid from Alice, broadcast.
+    State 6: X received.
+    State 7: Sent TX5 sig.
+    State 8: TX4 sig received valid from Alice.
+    State 9: TX4 broadcast.
     ==================================================
     """
     required_key_names = ["key_2_2_AC_1", "key_2_2_CB_0",
                                   "key_TX2_secret", "key_TX3_lock"]
 
+    def get_state_machine_callbacks(self):
+        """Return the callbacks for each state transition.
+        For each a boolean flag is used to indicate whether
+        it should be automatically triggered by the previous
+        state transition completing.
+        """
+        return [(self.handshake, False),
+                (self.negotiate_coinswap_parameters, False),
+                (self.receive_tx0_hash_tx2sig, False),
+                (self.send_tx1id_tx2_sig_tx3_sig, True),
+                (self.receive_tx3_sig, False),
+                (self.push_tx1, False),
+                (self.receive_secret, False),
+                (self.send_tx5_sig, True),
+                (self.receive_tx4_sig, False),
+                (self.broadcast_tx4, True)]
+
+    def set_handshake_parameters(self, source_chain="BTC",
+                                 destination_chain="BTC",
+                                 minimum_amount=1000000,
+                                 maximum_amount=100000000):
+        self.source_chain = source_chain
+        self.destination_chain = destination_chain
+        self.minimum_amount = minimum_amount
+        self.maximum_amount = maximum_amount
+
+    def handshake(self, d):
+        if d["source_chain"] != self.source_chain:
+            print()
+            return (False, "source chain was wrong: " + d["source_chain"])
+        if d["destination_chain"] != self.destination_chain:
+            return (False, "destination chain was wrong: " + d["destination_chain"])
+        if d["amount"] < self.minimum_amount:
+            return (False, "Requested amount too small: " + d["amount"])
+        if d["amount"] > self.maximum_amount:
+            return (False, "Requested amount too large: " + d["amount"])
+        return (True, "Handshake parameters from Alice accepted")
+
     def negotiate_coinswap_parameters(self, params):
         #receive parameters and ephemeral keys, destination address from Alice.
         #Send back ephemeral keys and destination address, or rejection,
         #if invalid, to Alice.
-        self.update(0)
         for k in self.required_key_names:
             self.coinswap_parameters.set_pubkey(k, self.keyset[k][1])
         try:
@@ -70,8 +110,7 @@ class CoinSwapCarol(CoinSwapParticipant):
             self.coinswap_parameters.set_timeouts(params[7], params[8])
             self.coinswap_parameters.set_tx4_address(params[9])
         except:
-            self.backout("Invalid parameter set from counterparty, abandoning")
-            return
+            return (False, "Invalid parameter set from counterparty, abandoning")
 
         #on receipt of valid response, complete the CoinswapPublicParameters instance
         for k in self.required_key_names:
@@ -80,8 +119,7 @@ class CoinSwapCarol(CoinSwapParticipant):
             jlog.debug("addresses: " + str(self.coinswap_parameters.addresses_complete))
             jlog.debug("pubkeys: " + str(self.coinswap_parameters.pubkeys_complete))
             jlog.debug("timeouts: " + str(self.coinswap_parameters.timeouts_complete))
-            self.backout("Coinswap parameters is not complete")
-            return
+            return (False, "Coinswap parameters is not complete")
         #first entry confirms acceptance of parameters
         to_send = [True,
         self.coinswap_parameters.pubkeys["key_2_2_AC_1"],
@@ -89,7 +127,7 @@ class CoinSwapCarol(CoinSwapParticipant):
         self.coinswap_parameters.pubkeys["key_TX2_secret"],
         self.coinswap_parameters.pubkeys["key_TX3_lock"],
         self.coinswap_parameters.tx5_address]
-        return to_send
+        return (to_send, "OK")
 
     def receive_tx0_hash_tx2sig(self, txid0, hashed_secret, tx2sig):
         """On receipt of a utxo for TX0, a hashed secret, and a sig for TX2,
@@ -97,8 +135,6 @@ class CoinSwapCarol(CoinSwapParticipant):
         construct TX3, create our own sig,
         return back to Alice, the txid1, the sig of TX2 and the sig of TX3.
         """
-        assert self.state == 0
-        self.update(1)
         self.txid0 = txid0
         self.hashed_secret = hashed_secret
         #**CONSTRUCT TX2**
@@ -113,9 +149,10 @@ class CoinSwapCarol(CoinSwapParticipant):
                 absolutelocktime=self.coinswap_parameters.timeouts["LOCK0"],
                 refund_pubkey=self.coinswap_parameters.pubkeys["key_TX2_lock"])
         if not self.tx2.include_signature(0, tx2sig):
-            self.backout("Counterparty sig for TX2 invalid; backing out.")
-            return
-        self.update(2)
+            return (False, "Counterparty sig for TX2 invalid; backing out.")
+        return (True, "OK")
+
+    def send_tx1id_tx2_sig_tx3_sig(self):
         #create our own signature for it
         self.tx2.sign_at_index(self.keyset["key_2_2_AC_1"][0], 1)
         our_tx2_sig = self.tx2.signatures[0][1]
@@ -172,58 +209,44 @@ class CoinSwapCarol(CoinSwapParticipant):
         our_tx3_sig = self.tx3.signatures[0][0]
         jlog.info("Carol now has partially signed TX3:")
         jlog.info(self.tx3)
-        self.update(3)
-        return (self.tx1.txid + ":" + str(self.tx1.pay_out_index),
-                our_tx2_sig, our_tx3_sig)
+        return ([self.tx1.txid + ":" + str(self.tx1.pay_out_index),
+                our_tx2_sig, our_tx3_sig], "OK")
 
-    def receive_tx_3_sig(self, sig):
+    def receive_tx3_sig(self, sig):
         """Receives the sig on transaction TX3 which pays from our txid of TX1,
         to the 2 of 2 agreed CB. Then, wait until TX0 seen on network.
         """
-        assert self.state == 3
         if not self.tx3.include_signature(1, sig):
-            self.backout("Counterparty signature for TX2 invalid; backing out.")
-            return
+            return (False, "TX3 signature received is invalid")
         jlog.info("Carol now has fully signed TX3:")
         jlog.info(self.tx3)
-        self.update(4)
         #wait until TX0 is seen before pushing ours.
-        self.loop = task.LoopingCall(self.check_for_phase1_utxos,
-                                     [self.txid0], self.push_tx1)
+        self.loop = task.LoopingCall(self.check_for_phase1_utxos, [self.txid0])
         self.loop.start(3.0)        
-        return True
+        return (True, "Received TX3 sig OK")
 
-    def push_tx1(self, txids):
+    def push_tx1(self):
         """Having seen TX0 confirmed, broadcast TX1 and wait for confirmation.
         """
-        self.loop.stop()
         errmsg, success = self.tx1.push()
         if not success:
-            self.backout("Failed to push TX1, errmsg: " + errmsg)
-            return
+            return (False, "Failed to push TX1")
         #Wait until TX1 seen before confirming phase2 ready.
         print('carol about to start tx1 loop call')
-        self.tx1_loop = task.LoopingCall(self.check_for_phase1_utxos,
+        self.loop = task.LoopingCall(self.check_for_phase1_utxos,
                                          [self.tx1.txid + ":" + str(
                                              self.tx1.pay_out_index)],
-                                         self.receive_confirmation_tx_0_1)
+                                         1, self.receive_confirmation_tx_0_1)
         print('created tx1 loop')
-        self.tx1_loop.start(3.0)
+        self.loop.start(3.0)
         print('started tx1 loop')
+        return (True, "TX1 broadcast OK")
 
-    def receive_confirmation_tx_0_1(self, txid1):
+    def receive_confirmation_tx_0_1(self):
         """We wait until client code has confirmed both pay-in txs
         before proceeding; note that this doesn't necessarily mean
         *1* confirmation, could be safer.
         """
-        assert self.state == 4
-        if not txid1[0] == self.tx1.txid + ":" + str(
-            self.tx1.pay_out_index):
-            self.backout("Error: received confirmation of wrong txid.")
-            return
-        self.tx1_loop.stop()
-        #No action at end; Alice instigates redeem phase (except timeout backout).
-        self.update(5)
         self.phase2_ready = True
 
     def is_phase2_ready(self):
@@ -234,69 +257,65 @@ class CoinSwapCarol(CoinSwapParticipant):
         validate it, if valid, update state, construct TX4 and sig
         and send to Alice.
         """
-        assert self.state == 5
         print('started receive secret')
         dummy, verifying_hash = get_coinswap_secret(raw_secret=secret)
         if not verifying_hash == self.hashed_secret:
-            self.backout("Counterparty provided invalid preimage secret, backing out.")
-            return
+            return (False, "Received invalid coinswap secret.")
         #Known valid; must be persisted in case recovery needed.
         self.secret = secret
-        self.update(6)
+        return (True, "OK")
+
+    def send_tx5_sig(self):
         utxo_in = self.tx1.txid + ":" + str(self.tx1.pay_out_index)
-        #We are now ready to directly spend, make TX4 and half-sign.
-        self.tx4 = CoinSwapTX45.from_params(
+        #We are now ready to directly spend, make TX5 and half-sign.
+        self.tx5 = CoinSwapTX45.from_params(
             self.coinswap_parameters.pubkeys["key_2_2_CB_0"],
             self.coinswap_parameters.pubkeys["key_2_2_CB_1"],
             utxo_in=utxo_in,
-            destination_address=self.coinswap_parameters.tx4_address,
-            destination_amount=self.coinswap_parameters.tx4_amount)
-        self.tx4.sign_at_index(self.keyset["key_2_2_CB_0"][0], 0)
-        sig = self.tx4.signatures[0][0]
-        self.update(7)
-        return sig
+            destination_address=self.coinswap_parameters.tx5_address,
+            destination_amount=self.coinswap_parameters.tx5_amount)
+        self.tx5.sign_at_index(self.keyset["key_2_2_CB_0"][0], 0)
+        sig = self.tx5.signatures[0][0]
+        return (sig, "OK")
     
-    def receive_tx5_sig(self, sig):
-        assert self.state == 7
-        print('starting recieve tx5 sig')
-        self.tx5 = CoinSwapTX45.from_params(
+    def receive_tx4_sig(self, sig):
+        print('starting recieve tx4 sig')
+        self.tx4 = CoinSwapTX45.from_params(
             self.coinswap_parameters.pubkeys["key_2_2_AC_0"],
             self.coinswap_parameters.pubkeys["key_2_2_AC_1"],
             utxo_in=self.txid0,
-            destination_address=self.coinswap_parameters.tx5_address,
-            destination_amount=self.coinswap_parameters.tx5_amount)
-        if not self.tx5.include_signature(0, sig):
-            self.backout("Counterparty signature for TX5 not valid; backing out.")
-            return False
-        self.update(8)
-        #We immediately broadcast
-        self.tx5.sign_at_index(self.keyset["key_2_2_AC_1"][0], 1)
-        errmsg, success = self.tx5.push()
-        if not success:
-            self.backout("Failed to push TX5, errmsg: " + errmsg)
-            return False
-        self.tx5_loop = task.LoopingCall(self.wait_for_tx5_confirmed)
-        self.tx5_loop.start(3.0)
-        return True
+            destination_address=self.coinswap_parameters.tx4_address,
+            destination_amount=self.coinswap_parameters.tx4_amount)
+        if not self.tx4.include_signature(0, sig):
+            return (False, "Received invalid TX4 signature")
+        return (True, "OK")
 
-    def wait_for_tx5_confirmed(self):
-        assert self.state == 8
-        result = jm_single().bc_interface.query_utxo_set([self.tx5.txid+":0"],
+    def broadcast_tx4(self):
+        self.tx4.sign_at_index(self.keyset["key_2_2_AC_1"][0], 1)
+        errmsg, success = self.tx4.push()
+        if not success:
+            return (False, "Failed to push TX4")
+        self.tx4_loop = task.LoopingCall(self.wait_for_tx4_confirmed)
+        self.tx4_loop.start(3.0)
+        return (True, "OK")
+
+    def wait_for_tx4_confirmed(self):
+        result = jm_single().bc_interface.query_utxo_set([self.tx4.txid+":0"],
                                                          includeconf=True)
         if None in result:
             return
         for u in result:
             if u['confirms'] < 1:
                 return
-        self.tx5_loop.stop()
-        self.tx5_confirmed = True
-        jlog.info("Carol received: " + self.tx5.txid + ", now ending.")
-        self.persist()        
+        self.tx4_loop.stop()
+        self.tx4_confirmed = True
+        jlog.info("Carol received: " + self.tx4.txid + ", now ending.")
 
-    def is_tx5_confirmed(self):
-        if self.tx5_confirmed:
-            return self.tx5.txid + ":0"
-        return False
+    def is_tx4_confirmed(self):
+        if self.tx4_confirmed:
+            return self.tx4.txid
+        else:
+            return False
 
     def watch_for_tx3_spends(self, redeeming_txid):
         """Function used to check whether our, or a competing

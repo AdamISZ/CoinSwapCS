@@ -57,6 +57,8 @@ def main():
     cpp.set_tx5_address(tx5address)
     cpp.set_timeouts(lock0, lock1)
     carol = CoinSwapCarol(carolwallet, 'carolstate.json', cpp)
+    #TODO this will be config variables:
+    carol.set_handshake_parameters()
     reactor.listenTCP(7080, server.Site(CoinSwapCarolJSONServer(carol)))
     reactor.run()
 

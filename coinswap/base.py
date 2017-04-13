@@ -19,6 +19,7 @@ import abc
 import sys
 from pprint import pformat
 import json
+import inspect
 #from .alice import CoinSwapAlice
 #from .carol import CoinSwapCarol
 
@@ -152,31 +153,112 @@ def generate_escrow_redeem_script(hashed_secret, recipient_pubkey, locktime,
     return rss
 
 class StateMachine(object):
-    def __init__(self, num_states, callbacks=None):
-        self.num_states = num_states
-        self.callbacks = callbacks
-        assert len(self.callbacks) == self.num_states
-        self.state = 0
+    """A simple state machine that has integer states,
+    incremented on successful execution of corresponding callbacks.
+    """
+    def __init__(self, init_state, backout, callbackdata):
+        #Signature of callbacks:
+        #Args: none
+        #Returns: bool, msg
+        self.num_states = len(callbackdata)
+        self.init_state = init_state
+        self.state = init_state
+        #by default no pre- or post- processing
+        self.setup = None
+        self.finalize = None
+        self.backout_callback = backout
+        self.callbacks = []
+        self.auto_continue = []
+        for i,cbd in enumerate(callbackdata):
+            self.callbacks.append(cbd[0])
+            if cbd[1]:
+                self.auto_continue.append(i)
 
-    def set_callbacks(self, callbacks):
-        assert len(callbacks) == len(self.callbacks)
-        for i in range(len(callbacks)):
-            self.set_callback(i, callbacks[i])
-
-    def set_callback(self, i, callback):
-        self.callbacks[i] = callback
-
-    def run(self):
-        for _ in range(self.num_states):
-            if not self.execute_callback():
-                return (False, self.state) #trigger backout
-    def execute_callback(self):
-        retval = self.callbacks[self.state]
-        if not self.callbacks[self.state]:
+    def tick_return(self, *args):
+        """Must pass the callback name as the first argument;
+        returns the return value from the first non-auto-continue
+        callback.
+        """
+        requested_callback = args[0]
+        args = args[1:]
+        print('in tick return, ahve args: ', *args)
+        if requested_callback != self.callbacks[self.state].__name__:
+            print('invalid callback name: ', requested_callback)
             return False
+        if self.setup:
+            self.setup()
+        if not args:
+            retval, msg = self.execute_callback()
+        else:
+            retval, msg = self.execute_callback(*args)
+        if not retval:
+            print("Execution failed at step after: " + str(self.state) + \
+                  ", backing out.")
+            reactor.callLater(0, self.backout_callback(self.state))
+            return False
+        if self.finalize:
+            if self.state > 2:
+                self.finalize()
+        print("State: " + str(self.state -1) + " finished OK.")      
+        if self.state in self.auto_continue:
+            return self.tick_return(self.callbacks[self.state].__name__)
+        return retval
+
+    def tick(self, *args):
+        """Executes processing for each state with order enforced.
+        Runs pre- and post-processing step if provided.
+        Optionally provide arguments - for callbacks receiving data from
+        counterparty, these are provided, otherwise not.
+        Calls backout_callback on failure, to allow
+        the caller to execute backout conditional on state.
+        """
+        curframe = inspect.currentframe()
+        calframe = inspect.getouterframes(curframe, 2)
+        print('caller name:', calframe[1][3])
+        print('starting tick function, state is: ', self.state)
+        if self.setup:
+            self.setup()
+        if not args:
+            retval, msg = self.execute_callback()
+        else:
+            retval, msg = self.execute_callback(*args)
+        if not retval:
+            print("Execution failed at step after: " + str(self.state) + \
+                  ", backing out.")
+            print("Error message: ", msg)
+            self.backout_callback(self.state)
+            return False
+        if self.finalize:
+            if self.state > 2:
+                self.finalize()
+        print("State: " + str(self.state -1) + " finished OK.")
+        if self.state in self.auto_continue:
+            self.tick()
+
+    def execute_callback(self, *args):
+        print('starting callback: ', str(self.callbacks[self.state]))
+        print('args are: ', args)
+        try:
+            if args:
+                retval, msg = self.callbacks[self.state](*args)
+            else:
+                retval, msg = self.callbacks[self.state]()
+        except Exception as e:
+            errormsg = "Failure to execute step after: " + str(self.state)
+            errormsg += ", Exception: " + repr(e)
+            jlog.info(errormsg)
+            return (False, errormsg)
+        if not retval:
+            return (False, msg)
         #update to next state *only* on success.
         self.state += 1
-        return True
+        return (retval, "OK")
+
+    def set_finalize(self, callback):
+        self.finalize = callback
+
+    def set_setup(self, callback):
+        self.setup = callback
         
 class CoinSwapTX(object):
     """A generic bitcoin transaction construct,
@@ -611,14 +693,14 @@ class CoinSwapRedeemTX23Timeout(CoinSwapTX):
 class CoinSwapParticipant(object):
     __metaclass__ = abc.ABCMeta
 
-    def __init__(self, wallet, state_file, cpp=None):
+    def __init__(self, wallet, state_file, cpp=None): 
         self.coinswap_parameters = cpp
         assert isinstance(self.coinswap_parameters, CoinSwapPublicParameters)
         self.generate_keys()
         assert isinstance(wallet, Wallet)
         self.state_file = state_file
         self.wallet = wallet
-        self.state = -1
+        self.state = 0
         self.tx0 = None
         self.tx1 = None
         self.tx2 = None
@@ -629,27 +711,27 @@ class CoinSwapParticipant(object):
         self.hashed_secret = None
         #currently only used by Carol; TODO
         self.phase2_ready = False
-        self.tx5_confirmed = False
+        self.tx4_confirmed = False
         self.successful_tx3_redeem = False
+        self.sm = StateMachine(self.state, self.backout,
+                               self.get_state_machine_callbacks())
+        self.sm.set_finalize(self.finalize)        
 
     def generate_privkey(self):
         #always hex, with compressed flag
         return binascii.hexlify(os.urandom(32))+"01"
 
-    def update(self, state):
-        assert self.state == state - 1
-        self.state = state
-        if self.state > 0:
-            self.persist()
-            #for testing only
-            self.load()
+    def finalize(self):
+        self.persist()
+        #for testing only
+        self.load()
 
     def load(self):
         with open(self.state_file, "rb") as f:
             loaded_state = json.loads(f.read(), object_hook=_byteify)
         self.coinswap_parameters = CoinSwapPublicParameters()
         self.coinswap_parameters.deserialize(loaded_state['public_parameters'])
-        self.state = loaded_state['current_state']
+        self.sm.state = loaded_state['current_state']
         self.keyset = loaded_state['keyset']
         self.secret = loaded_state['coinswap_secret_data']['preimage']
         self.hashed_secret = loaded_state['coinswap_secret_data']['hash']
@@ -670,7 +752,7 @@ class CoinSwapParticipant(object):
         """
         persisted_state = {}
         persisted_state['public_parameters'] = self.coinswap_parameters.serialize()
-        persisted_state['current_state'] = self.state
+        persisted_state['current_state'] = self.sm.state
         persisted_state['keyset'] = self.keyset
         persisted_state['coinswap_secret_data'] = {'hash': self.hashed_secret,
                                                    'preimage': self.secret}
@@ -863,7 +945,7 @@ class CoinSwapParticipant(object):
             else:
                 assert False
 
-    def check_for_phase1_utxos(self, utxos, callback, confs=1):
+    def check_for_phase1_utxos(self, utxos, confs=1, cb=None):
         """Any participant needs to wait for completion of phase 1 through
         seeing the utxos on the network. Pass callback for start of phase2
         (redemption phase), must have signature callback(utxolist).
@@ -879,7 +961,11 @@ class CoinSwapParticipant(object):
         for u in result:
             if u['confirms'] < confs:
                 return
-        callback(utxos)
+        self.loop.stop()
+        if cb:
+            cb()
+        else:
+            self.sm.tick()
 
     def generate_keys(self):
         """These are ephemeral keys required for redeeming various transactions.
@@ -902,12 +988,12 @@ class CoinSwapParticipant(object):
         report_msg.append("Pay in transaction from Carol to 2-of-2:")
         report_msg.append("Txid: " + self.txid1)
         report_msg.append("Amount: " + str(self.coinswap_parameters.tx1_amount))
-        report_msg.append("Pay out transaction from 2-of-2 to Alice:")
-        report_msg.append("Txid: " + self.tx4.txid)
+        report_msg.append("Pay out transaction from 2-of-2 to Carol:")
+        report_msg.append("Txid: " + self.txid4)
         report_msg.append("Receiving address: " + self.coinswap_parameters.tx4_address)
         report_msg.append("Amount: " + str(self.coinswap_parameters.tx4_amount))
-        report_msg.append("Pay out transaction from 2-of-2 to Carol:")
-        report_msg.append("Txid: " + self.txid5)
+        report_msg.append("Pay out transaction from 2-of-2 to Alice:")
+        report_msg.append("Txid: " + self.tx5.txid)
         report_msg.append("Receiving address: " + self.coinswap_parameters.tx5_address)
         report_msg.append("Amount: " + str(self.coinswap_parameters.tx5_amount))
         
@@ -915,6 +1001,9 @@ class CoinSwapParticipant(object):
 
     @abc.abstractmethod
     def negotiate_coinswap_parameters(self):
+        pass
+    @abc.abstractmethod
+    def get_state_machine_callbacks(self):
         pass
 
 class CoinSwapException(Exception):

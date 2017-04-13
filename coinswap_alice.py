@@ -57,10 +57,10 @@ def main():
     cpp.set_timeouts(lock0, lock1)
     alice = CoinSwapAlice(alicewallet, 'alicestate.json', cpp)
     alice_client = CoinSwapJSONRPCClient("127.0.0.1", "7080",
-                                         alice.get_jsonrpc_callbacks())
+                                         alice.sm.tick)
     alice.set_jsonrpc_client(alice_client)
     #call to alice's start(), when running, will initiate the protocol
-    reactor.callWhenRunning(alice.handshake)
+    reactor.callWhenRunning(alice.sm.tick)
     reactor.run()
 
 if __name__ == "__main__":
