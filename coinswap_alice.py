@@ -44,7 +44,8 @@ def main():
     sync_wallet(alicewallet)
     tx01_amount, tx24_recipient_amount, tx35_recipient_amount = [int(
         x) for x in sys.argv[2:5]]
-    tx4address = alicewallet.get_new_addr(0, 0)
+    #Our destination address should be in a separate mixdepth
+    tx5address = alicewallet.get_new_addr(1, 1)
     #For now let's use a simple default of 10 blocks for LOCK1 and 20 for LOCK0
     current_blockheight = get_current_blockheight()
     lock0 = current_blockheight + 20
@@ -53,7 +54,7 @@ def main():
     #or destination addresses.
     cpp = CoinSwapPublicParameters(tx01_amount, tx24_recipient_amount,
                                    tx35_recipient_amount)
-    cpp.set_tx4_address(tx4address)
+    cpp.set_tx5_address(tx5address)
     cpp.set_timeouts(lock0, lock1)
     alice = CoinSwapAlice(alicewallet, 'alicestate.json', cpp)
     alice_client = CoinSwapJSONRPCClient("127.0.0.1", "7080",

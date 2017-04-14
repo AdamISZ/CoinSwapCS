@@ -157,9 +157,6 @@ class StateMachine(object):
     incremented on successful execution of corresponding callbacks.
     """
     def __init__(self, init_state, backout, callbackdata):
-        #Signature of callbacks:
-        #Args: none
-        #Returns: bool, msg
         self.num_states = len(callbackdata)
         self.init_state = init_state
         self.state = init_state
@@ -181,9 +178,8 @@ class StateMachine(object):
         """
         requested_callback = args[0]
         args = args[1:]
-        print('in tick return, ahve args: ', *args)
         if requested_callback != self.callbacks[self.state].__name__:
-            print('invalid callback name: ', requested_callback)
+            jlog.info('invalid callback name: ' + str(requested_callback))
             return False
         if self.setup:
             self.setup()
@@ -192,14 +188,14 @@ class StateMachine(object):
         else:
             retval, msg = self.execute_callback(*args)
         if not retval:
-            print("Execution failed at step after: " + str(self.state) + \
+            jlog.info("Execution failed at step after: " + str(self.state) + \
                   ", backing out.")
             reactor.callLater(0, self.backout_callback(self.state))
             return False
         if self.finalize:
             if self.state > 2:
                 self.finalize()
-        print("State: " + str(self.state -1) + " finished OK.")      
+        jlog.info("State: " + str(self.state -1) + " finished OK.")      
         if self.state in self.auto_continue:
             return self.tick_return(self.callbacks[self.state].__name__)
         return retval
@@ -212,10 +208,7 @@ class StateMachine(object):
         Calls backout_callback on failure, to allow
         the caller to execute backout conditional on state.
         """
-        curframe = inspect.currentframe()
-        calframe = inspect.getouterframes(curframe, 2)
-        print('caller name:', calframe[1][3])
-        print('starting tick function, state is: ', self.state)
+        jlog.info('starting tick function, state is: ' + str(self.state))
         if self.setup:
             self.setup()
         if not args:
@@ -223,21 +216,19 @@ class StateMachine(object):
         else:
             retval, msg = self.execute_callback(*args)
         if not retval:
-            print("Execution failed at step after: " + str(self.state) + \
+            jlog.info("Execution failed at step after: " + str(self.state) + \
                   ", backing out.")
-            print("Error message: ", msg)
+            jlog.info("Error message: " + msg)
             self.backout_callback(self.state)
             return False
         if self.finalize:
             if self.state > 2:
                 self.finalize()
-        print("State: " + str(self.state -1) + " finished OK.")
+        jlog.info("State: " + str(self.state -1) + " finished OK.")
         if self.state in self.auto_continue:
             self.tick()
 
     def execute_callback(self, *args):
-        print('starting callback: ', str(self.callbacks[self.state]))
-        print('args are: ', args)
         try:
             if args:
                 retval, msg = self.callbacks[self.state](*args)
@@ -341,8 +332,6 @@ class CoinSwapTX(object):
 
     def signature_form(self, index):
         assert len(self.signing_redeem_scripts) >= index + 1
-        jlog.info("running signature form for index: " + str(index))
-        jlog.info("with this redeem script: " + str(self.signing_redeem_scripts[index]))
         return btc.signature_form(self.base_form, index,
                                   self.signing_redeem_scripts[index])
     
@@ -951,11 +940,9 @@ class CoinSwapParticipant(object):
         (redemption phase), must have signature callback(utxolist).
         This should be fired by task looptask, which is stopped on success.
         """
-        print('Type: ', type(self), " checking for utxos: ", utxos)
+        jlog.info("Checking for utxos: " + str(utxos))
         result = jm_single().bc_interface.query_utxo_set(utxos,
                                                          includeconf=True)
-        print('got this result:')
-        print(result)
         if None in result:
             return
         for u in result:

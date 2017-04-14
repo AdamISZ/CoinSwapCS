@@ -10,18 +10,18 @@ jlog = get_log()
 
 class CoinSwapJSONRPCClient(object):
     """A class encapsulating Alice's json rpc client.
-    """   
+    """
+    #Keys map to states as per description of CoinswapAlice
     method_names = {0: "handshake",
                     1: "negotiate",
                     3: "tx0id_hx_tx2sig",
                     5: "sigtx3",
-                    6: "phase2_ready",
-                    8: "secret",
-                    11: "sigtx4"}
+                    9: "secret",
+                    12: "sigtx4"}
     def __init__(self, host, port, json_callback):
         self.host = host
         self.port = int(port)
-        #A dict of functions on method name
+        #Callback fired on receiving response to send()
         self.json_callback = json_callback
         self.proxy = Proxy('http://' + host + ":" + str(port) + "/")
     
@@ -33,7 +33,6 @@ class CoinSwapJSONRPCClient(object):
         d.addCallback(callback).addErrback(self.error)
 
     def send(self, method, *args):
-        #jlog.debug("using method, args: " + method + " , " + str(args))
         d = self.proxy.callRemote(method, *args)
         d.addCallback(self.json_callback).addErrback(self.error)
 

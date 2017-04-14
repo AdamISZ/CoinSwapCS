@@ -78,17 +78,25 @@ class CoinSwapAlice(CoinSwapParticipant):
                 (self.send_tx4_sig, False),
                 (self.confirm_tx4_sig_receipt, False)]
 
-    def send(self, send_id, *args):
-        """The sending id is an integer that maps to a specific call in the
-        JSON RPC API. The return values from the JSON call are returned directly.
+    def send(self, *args):
+        """The state machine state maps to a specific call in the
+        JSON RPC API. The return value is passed to the callback, which
+        is the statemachine .tick() function, which passes that return
+        value to the next state transition function.
         """
-        return self.jsonrpcclient.send(self.jsonrpcclient.method_names[send_id], *args)
+        return self.jsonrpcclient.send(
+            self.jsonrpcclient.method_names[self.sm.state], *args)
 
     def handshake(self):
+        """Record the state of the wallet at the start of the process.
+        Send a handshake message to Carol with required parameters for
+        this Coinswap.
+        """
+        self.bbmb = self.wallet.get_balance_by_mixdepth()
         to_send = {"source_chain": "BTC",
                    "destination_chain": "BTC",
                    "amount": self.coinswap_parameters.tx0_amount}
-        self.send(0, to_send)
+        self.send(to_send)
         return (True, "Handshake OK")
 
     def negotiate_coinswap_parameters(self, accepted):
@@ -96,10 +104,8 @@ class CoinSwapAlice(CoinSwapParticipant):
         Receive back ephemeral keys and destination address, or rejection,
         from Carol.
         """
-        print('starting negotiate')
         if not accepted:
             return (False, "Carol rejected handshake.")
-        print('accepted OK')
         to_send = [self.coinswap_parameters.tx0_amount,
                    self.coinswap_parameters.tx2_recipient_amount,
                    self.coinswap_parameters.tx3_recipient_amount,
@@ -109,11 +115,13 @@ class CoinSwapAlice(CoinSwapParticipant):
                    self.keyset["key_TX3_secret"][1],
                    self.coinswap_parameters.timeouts["LOCK0"],
                    self.coinswap_parameters.timeouts["LOCK1"],
-                   self.coinswap_parameters.tx4_address]
-        self.send(1, *to_send)
+                   self.coinswap_parameters.tx5_address]
+        self.send(*to_send)
         return (True, "Coinswap parameters sent OK")
 
     def complete_negotiation(self, carol_response):
+        """Receive Carol's coinswap parameters.
+        """
         jlog.debug('Carol response for param negotiation: ' + str(carol_response))
         if not carol_response[0]:
             return (False, "Negative response from Carol in negotiation")
@@ -126,7 +134,7 @@ class CoinSwapAlice(CoinSwapParticipant):
         self.coinswap_parameters.set_pubkey("key_2_2_CB_0", carol_response[2])
         self.coinswap_parameters.set_pubkey("key_TX2_secret", carol_response[3])
         self.coinswap_parameters.set_pubkey("key_TX3_lock", carol_response[4])
-        self.coinswap_parameters.set_tx5_address(carol_response[5])
+        self.coinswap_parameters.set_tx4_address(carol_response[5])
         if not self.coinswap_parameters.is_complete():
             return (False,
                     "Coinswap public parameter negotiation failed, incomplete.")
@@ -189,7 +197,7 @@ class CoinSwapAlice(CoinSwapParticipant):
         #Create our own signature for TX2
         self.tx2.sign_at_index(self.keyset["key_2_2_AC_0"][0], 0)
         sigtx2 = self.tx2.signatures[0][0]
-        self.send(3, self.tx0.txid + ":" + str(self.tx0.pay_out_index),
+        self.send(self.tx0.txid + ":" + str(self.tx0.pay_out_index),
                   self.hashed_secret, sigtx2)
         return (True, "TX0id, H(X), TX2 sig sent OK")
 
@@ -224,7 +232,7 @@ class CoinSwapAlice(CoinSwapParticipant):
         #create our own signature for it
         self.tx3.sign_at_index(self.keyset["key_2_2_CB_1"][0], 1)
         sig = self.tx3.signatures[0][1]
-        self.send(5, sig)
+        self.send(sig)
         return (True, "Sent TX3 sig OK.")
 
     def broadcast_tx0(self, accepted):
@@ -248,20 +256,25 @@ class CoinSwapAlice(CoinSwapParticipant):
         But, we do not continue until the other side returns positive from
         the rpc call phase2_ready, i.e. they confirm they see them also. 
         """
-        print('starting wait for phase2 callback in Alice')
         self.phase2_loop = task.LoopingCall(self.jsonrpcclient.send_poll,
                                             "phase2_ready", self.phase2_callback)
         self.phase2_loop.start(3.0)
         return (True, "Wait for phase2 loop started")
 
     def phase2_callback(self, result):
+        """Proceeds to next state when Carol confirms
+        that TX0 and TX1 are confirmed.
+        """
         if not result:
             return
         self.phase2_loop.stop()
         self.sm.tick()
         
     def send_coinswap_secret(self):
-        self.send(8, self.secret)
+        """Sends coinswap secret pre-image X
+        to Carol.
+        """
+        self.send(self.secret)
         return (True, "Secret sent OK")
     
     def receive_tx5_sig(self, sig):
@@ -280,7 +293,8 @@ class CoinSwapAlice(CoinSwapParticipant):
         return (True, "Counterparty signature for TX5 OK.")
 
     def broadcast_tx5(self):
-        #We immediately sign TX5 ourselves, then broadcast
+        """Sign TX5 ourselves, then broadcast
+        """
         self.tx5.sign_at_index(self.keyset["key_2_2_CB_1"][0], 1)
         errmsg, success = self.tx5.push()
         if not success:
@@ -303,6 +317,9 @@ class CoinSwapAlice(CoinSwapParticipant):
         self.sm.tick()
 
     def send_tx4_sig(self):
+        """Send partial signature on TX4 (out of TX0)
+        to Carol for her to complete sign and broadcast.
+        """
         utxo_in = self.tx0.txid + ":" + str(self.tx0.pay_out_index)
         self.tx4 = CoinSwapTX45.from_params(self.coinswap_parameters.pubkeys["key_2_2_AC_0"],
                                         self.coinswap_parameters.pubkeys["key_2_2_AC_1"],
@@ -311,7 +328,7 @@ class CoinSwapAlice(CoinSwapParticipant):
                                         destination_amount=self.coinswap_parameters.tx4_amount)
         self.tx4.sign_at_index(self.keyset["key_2_2_AC_0"][0], 0)
         sig = self.tx4.signatures[0][0]
-        self.send(11, sig)
+        self.send(sig)
         self.loop_tx4 = task.LoopingCall(self.wait_for_tx4_confirmation)
         self.loop_tx4.start(3.0)        
         return (True, "TX4 signature sent.")
@@ -324,17 +341,25 @@ class CoinSwapAlice(CoinSwapParticipant):
         """Receives notification from Carol that tx4 is seen on network;
         we check whether we see it also, for convenience, but don't act on it.
         """
-        print('starting wait for tx4 callback in Alice')
         self.tx4_loop = task.LoopingCall(self.jsonrpcclient.send_poll,
                                             "confirm_tx4", self.tx4_callback)
         self.tx4_loop.start(3.0)
         return (True, "Wait for tx4 loop started")
     
     def tx4_callback(self, result):
+        """Once Carol has confirmed receipt of TX4, retrieve
+        txid for our records, and finish the Coinswap protocol.
+        """
         if not result:
             return
         self.txid4 = result
         self.tx4_loop.stop()
         jlog.info("Coinswap successfully completed.")
+        sync_wallet(self.wallet)
+        self.bbma = self.wallet.get_balance_by_mixdepth()
+        jlog.info("Wallet before: ")
+        jlog.info(pformat(self.bbmb))
+        jlog.info("Wallet after: ")
+        jlog.info(pformat(self.bbma))
         self.final_report()
         reactor.stop()

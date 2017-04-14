@@ -34,22 +34,21 @@ class CoinSwapCarol(CoinSwapParticipant):
     State machine:
     * indicates not reached in cooperative case.
     ** indicates end.
-    State 0: handshake complete
-    State 1: Parameter negotiation complete.
+    State 0: pre-initialisation
+    State 1: handshake complete
+    State 2: Parameter negotiation complete.
     ========SETUP PHASE===============================
-    State 2: TX0id, H(x), TX2sig received from Alice.
-    State 3: TX1id, TX2sig, TX3sig sent to Alice.
-    State 4: TX3 sig received.
-    State 5: TX0 seen confirmed.
-    State 5: TX1 broadcast.
-    State 6: TX1 seen confirmed.
+    State 3: TX0id, H(x), TX2sig received from Alice.
+    State 4: TX1id, TX2sig, TX3sig sent to Alice.
+    State 5: TX3 sig received and TX0 seen confirmed.
+    State 6: TX1 broadcast and confirmed.
     ==================================================
     
     ========REDEEM PHASE==============================
-    State 6: X received.
-    State 7: Sent TX5 sig.
-    State 8: TX4 sig received valid from Alice.
-    State 9: TX4 broadcast.
+    State 7: X received.
+    State 8: Sent TX5 sig.
+    State 9: TX4 sig received valid from Alice.
+    State 10: TX4 broadcast.
     ==================================================
     """
     required_key_names = ["key_2_2_AC_1", "key_2_2_CB_0",
@@ -76,12 +75,19 @@ class CoinSwapCarol(CoinSwapParticipant):
                                  destination_chain="BTC",
                                  minimum_amount=1000000,
                                  maximum_amount=100000000):
+        """Sets the conditions under which Carol is
+        prepared to do a coinswap.
+        """
         self.source_chain = source_chain
         self.destination_chain = destination_chain
         self.minimum_amount = minimum_amount
         self.maximum_amount = maximum_amount
 
     def handshake(self, d):
+        """Check that the proposed coinswap parameters
+        are acceptable.
+        """
+        self.bbmb = self.wallet.get_balance_by_mixdepth()
         if d["source_chain"] != self.source_chain:
             print()
             return (False, "source chain was wrong: " + d["source_chain"])
@@ -108,7 +114,7 @@ class CoinSwapCarol(CoinSwapParticipant):
             self.coinswap_parameters.set_pubkey("key_TX2_lock", params[5])
             self.coinswap_parameters.set_pubkey("key_TX3_secret", params[6])
             self.coinswap_parameters.set_timeouts(params[7], params[8])
-            self.coinswap_parameters.set_tx4_address(params[9])
+            self.coinswap_parameters.set_tx5_address(params[9])
         except:
             return (False, "Invalid parameter set from counterparty, abandoning")
 
@@ -126,7 +132,7 @@ class CoinSwapCarol(CoinSwapParticipant):
         self.coinswap_parameters.pubkeys["key_2_2_CB_0"],
         self.coinswap_parameters.pubkeys["key_TX2_secret"],
         self.coinswap_parameters.pubkeys["key_TX3_lock"],
-        self.coinswap_parameters.tx5_address]
+        self.coinswap_parameters.tx4_address]
         return (to_send, "OK")
 
     def receive_tx0_hash_tx2sig(self, txid0, hashed_secret, tx2sig):
@@ -310,6 +316,12 @@ class CoinSwapCarol(CoinSwapParticipant):
         self.tx4_loop.stop()
         self.tx4_confirmed = True
         jlog.info("Carol received: " + self.tx4.txid + ", now ending.")
+        sync_wallet(self.wallet)
+        self.bbma = self.wallet.get_balance_by_mixdepth()
+        jlog.info("Wallet before: ")
+        jlog.info(pformat(self.bbmb))
+        jlog.info("Wallet after: ")
+        jlog.info(pformat(self.bbma))
 
     def is_tx4_confirmed(self):
         if self.tx4_confirmed:

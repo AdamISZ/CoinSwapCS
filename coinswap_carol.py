@@ -45,7 +45,7 @@ def main():
     sync_wallet(carolwallet)
     tx01_amount, tx24_recipient_amount, tx35_recipient_amount = [int(
         x) for x in sys.argv[2:5]]
-    tx5address = carolwallet.get_new_addr(0, 0)
+    tx4address = carolwallet.get_new_addr(1, 1)
     #For now let's use a simple default of 10 blocks for LOCK1 and 20 for LOCK0
     current_blockheight = get_current_blockheight()
     lock0 = current_blockheight + 20
@@ -54,7 +54,7 @@ def main():
     #or destination addresses.
     cpp = CoinSwapPublicParameters(tx01_amount, tx24_recipient_amount,
                                    tx35_recipient_amount)
-    cpp.set_tx5_address(tx5address)
+    cpp.set_tx4_address(tx4address)
     cpp.set_timeouts(lock0, lock1)
     carol = CoinSwapCarol(carolwallet, 'carolstate.json', cpp)
     #TODO this will be config variables:
