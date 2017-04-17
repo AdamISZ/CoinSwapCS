@@ -89,7 +89,6 @@ class CoinSwapCarol(CoinSwapParticipant):
         """
         self.bbmb = self.wallet.get_balance_by_mixdepth()
         if d["source_chain"] != self.source_chain:
-            print()
             return (False, "source chain was wrong: " + d["source_chain"])
         if d["destination_chain"] != self.destination_chain:
             return (False, "destination chain was wrong: " + d["destination_chain"])
@@ -210,6 +209,7 @@ class CoinSwapCarol(CoinSwapParticipant):
                 hashed_secret=self.hashed_secret,
                 absolutelocktime=self.coinswap_parameters.timeouts["LOCK1"],
                 refund_pubkey=self.coinswap_parameters.pubkeys["key_TX3_lock"])
+        self.import_address(self.tx3.output_address)
         #create our signature on TX3
         self.tx3.sign_at_index(self.keyset["key_2_2_CB_0"][0], 0)
         our_tx3_sig = self.tx3.signatures[0][0]
@@ -238,14 +238,11 @@ class CoinSwapCarol(CoinSwapParticipant):
         if not success:
             return (False, "Failed to push TX1")
         #Wait until TX1 seen before confirming phase2 ready.
-        print('carol about to start tx1 loop call')
         self.loop = task.LoopingCall(self.check_for_phase1_utxos,
                                          [self.tx1.txid + ":" + str(
                                              self.tx1.pay_out_index)],
                                          1, self.receive_confirmation_tx_0_1)
-        print('created tx1 loop')
         self.loop.start(3.0)
-        print('started tx1 loop')
         return (True, "TX1 broadcast OK")
 
     def receive_confirmation_tx_0_1(self):
@@ -263,7 +260,6 @@ class CoinSwapCarol(CoinSwapParticipant):
         validate it, if valid, update state, construct TX4 and sig
         and send to Alice.
         """
-        print('started receive secret')
         dummy, verifying_hash = get_coinswap_secret(raw_secret=secret)
         if not verifying_hash == self.hashed_secret:
             return (False, "Received invalid coinswap secret.")
@@ -285,7 +281,6 @@ class CoinSwapCarol(CoinSwapParticipant):
         return (sig, "OK")
     
     def receive_tx4_sig(self, sig):
-        print('starting recieve tx4 sig')
         self.tx4 = CoinSwapTX45.from_params(
             self.coinswap_parameters.pubkeys["key_2_2_AC_0"],
             self.coinswap_parameters.pubkeys["key_2_2_AC_1"],
@@ -333,8 +328,8 @@ class CoinSwapCarol(CoinSwapParticipant):
         """Function used to check whether our, or a competing
         tx, successfully spends out of TX3. Meant to be polled.
         """
-        assert self.state in [5, 6, 7]
-        spent = detect_spent(self.tx3.txid, 0)
+        assert self.sm.state in [6, 7, 8]
+        spent = detect_spent(self.tx3.txid, 0, unconf=True)
         if not spent:
             return
         #It was spent; did we receive it?
@@ -342,19 +337,24 @@ class CoinSwapCarol(CoinSwapParticipant):
         #(pay attention to order)
         #pass it to getrawtransaction 1 (so serialized)
         #read the input txids.
-        jlog.info("TX3 (", self.tx3.txid, "), was spent.")
+        jlog.info("TX3 (" + self.tx3.txid + "), was spent.")
         #list the recent transactions (TODO)
-        recent_txs = jm_single().bc_interface.rpc("listtransactions", ["*", 100])
+        wallet_name = jm_single().bc_interface.get_wallet_name(self.wallet)
+        recent_txs = jm_single().bc_interface.rpc("listtransactions",
+                                                  [wallet_name, 100, 0, True])
         for rt in recent_txs:
-            #only confirmed
-            if rt["confirmations"] < 1:
+            try:
+                txid = rt["txid"]
+                rawtx = jm_single().bc_interface.rpc("getrawtransaction", [txid, 1])
+            except:
                 continue
-            txid = rt["txid"]
-            rawtx = jm_single().bc_interface.rpc("getrawtransaction", [txid, 1])
             #check if inputs are from TX1:
             for vin in rawtx["vin"]:
+                if "txid" not in vin:
+                    #coinbase transactions
+                    continue
                 if vin["txid"] == self.tx3.txid:
-                    jlog.info("Found transaction which spent TX3: ", txid)
+                    jlog.info("Found transaction which spent TX3: " + self.tx3.txid)
                     if txid == redeeming_txid:
                         jlog.info("Our spend of TX3 was successful")
                         self.successful_tx3_redeem = True
@@ -365,7 +365,7 @@ class CoinSwapCarol(CoinSwapParticipant):
                         #secret before falling back to TX2 spend. In state 6+,
                         #we already have the secret.
                         if not self.secret:
-                            self.secret = get_secret_from_vin(vin,
+                            self.secret = get_secret_from_vin(rawtx["vin"],
                                                               self.hashed_secret)
                             if not self.secret:
                                 jlog.info("Critical error; TX3 spent but no "
@@ -404,7 +404,7 @@ class CoinSwapCarol(CoinSwapParticipant):
                                 self.coinswap_parameters.pubkeys["key_TX2_lock"],
                                 self.tx2.txid+":0",
                                 self.coinswap_parameters.tx4_amount,
-                                self.coinswap_parameters.tx5_address)
+                                self.coinswap_parameters.tx4_address)
             tx2redeem_secret.sign_at_index(self.keyset["key_TX2_secret"][0], 0)
             msg, success = tx2redeem_secret.push()
             if not success:

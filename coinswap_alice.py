@@ -22,6 +22,7 @@ def main():
     #to allow testing of confirm/unconfirm callback for multiple txs
     if isinstance(jm_single().bc_interface, RegtestBitcoinCoreInterface):
         jm_single().bc_interface.tick_forward_chain_interval = 2
+        jm_single().bc_interface.simulating = True
     #depth 0: spend in, depth 1: receive out, depth 2: for backout transactions.
     max_mix_depth = 3
     if not os.path.exists(os.path.join('wallets', wallet_name)):
@@ -58,7 +59,7 @@ def main():
     cpp.set_timeouts(lock0, lock1)
     alice = CoinSwapAlice(alicewallet, 'alicestate.json', cpp)
     alice_client = CoinSwapJSONRPCClient("127.0.0.1", "7080",
-                                         alice.sm.tick)
+                                         alice.sm.tick, alice.backout)
     alice.set_jsonrpc_client(alice_client)
     #call to alice's start(), when running, will initiate the protocol
     reactor.callWhenRunning(alice.sm.tick)

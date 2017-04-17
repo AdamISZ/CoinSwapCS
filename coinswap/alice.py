@@ -282,6 +282,8 @@ class CoinSwapAlice(CoinSwapParticipant):
         then sign ourselves and broadcast. Then wait for confirmation before
         TX4 construction.
         """
+        if not sig:
+            return (False, "Failed to receive TX5 sig from Carol.")
         self.tx5 = CoinSwapTX45.from_params(
             self.coinswap_parameters.pubkeys["key_2_2_CB_0"],
                                 self.coinswap_parameters.pubkeys["key_2_2_CB_1"],
@@ -339,12 +341,10 @@ class CoinSwapAlice(CoinSwapParticipant):
 
     def wait_for_tx4_confirmation(self):
         """Receives notification from Carol that tx4 is seen on network;
-        we check whether we see it also, for convenience, but don't act on it.
+        we check whether we see it also, for convenience, and use it to trigger
+        finalization of run.
         """
-        self.tx4_loop = task.LoopingCall(self.jsonrpcclient.send_poll,
-                                            "confirm_tx4", self.tx4_callback)
-        self.tx4_loop.start(3.0)
-        return (True, "Wait for tx4 loop started")
+        self.jsonrpcclient.send_poll("confirm_tx4", self.tx4_callback)
     
     def tx4_callback(self, result):
         """Once Carol has confirmed receipt of TX4, retrieve
@@ -353,7 +353,7 @@ class CoinSwapAlice(CoinSwapParticipant):
         if not result:
             return
         self.txid4 = result
-        self.tx4_loop.stop()
+        self.loop_tx4.stop()
         jlog.info("Coinswap successfully completed.")
         sync_wallet(self.wallet)
         self.bbma = self.wallet.get_balance_by_mixdepth()

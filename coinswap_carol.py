@@ -16,13 +16,17 @@ import time
 import os
 import sys
 
+def shutdown_block_simulator():
+    jm_single().bc_interface.send_thread_shutdown()
+
 def main():
     log.startLogging(sys.stdout)
     wallet_name = sys.argv[1]
     load_program_config()
     #to allow testing of confirm/unconfirm callback for multiple txs
     if isinstance(jm_single().bc_interface, RegtestBitcoinCoreInterface):
-        jm_single().bc_interface.tick_forward_chain_interval = 2
+        jm_single().bc_interface.tick_forward_chain_interval = 10
+        jm_single().bc_interface.simulate_blocks()
     #depth 0: spend in, depth 1: receive out, depth 2: for backout transactions.
     max_mix_depth = 3
     if not os.path.exists(os.path.join('wallets', wallet_name)):
@@ -60,6 +64,9 @@ def main():
     #TODO this will be config variables:
     carol.set_handshake_parameters()
     reactor.listenTCP(7080, server.Site(CoinSwapCarolJSONServer(carol)))
+    if isinstance(jm_single().bc_interface, RegtestBitcoinCoreInterface):
+        print("adding signal handler to shut down block generation")
+        reactor.addSystemEventTrigger('before', 'shutdown', shutdown_block_simulator)
     reactor.run()
 
 if __name__ == "__main__":

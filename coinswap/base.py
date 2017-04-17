@@ -61,7 +61,7 @@ def int_to_tx_ser(x):
     h = h[::-1]
     return h
 
-def detect_spent(txid, n):
+def detect_spent(txid, n, unconf=False):
     """Uses bitcoin rpc 'listunspent' to find out
     if the utxo specified is still not spent. 
     Assumes use of blockchain_source that has an
@@ -72,9 +72,11 @@ def detect_spent(txid, n):
     Note that interpreting 'True' as 'spent' implicitly
     assumes that the utxo existed on the network.
     """
-    #Using default listunspent arguments 1, 9999999, this means
-    #the transaction *containing* the utxo/outpoint must be confirmed.
-    unspent_list = jm_single().bc_interface.rpc('listunspent')
+    #Using listunspent arguments 0, 9999999, this means
+    #the transaction *containing* the utxo/outpoint must be at least seen.
+    #Otherwise, default 1, 9999999 requires it to be confirmed.
+    first = 0 if unconf else 1
+    unspent_list = jm_single().bc_interface.rpc('listunspent', [first, 9999999])
     filtered = [u for u in unspent_list if (u['txid'] == txid and u['vout'] == n)]
     return True if len(filtered) == 0 else False
 
@@ -190,7 +192,7 @@ class StateMachine(object):
         if not retval:
             jlog.info("Execution failed at step after: " + str(self.state) + \
                   ", backing out.")
-            reactor.callLater(0, self.backout_callback(self.state))
+            reactor.callLater(0, self.backout_callback, msg)
             return False
         if self.finalize:
             if self.state > 2:
@@ -208,6 +210,9 @@ class StateMachine(object):
         Calls backout_callback on failure, to allow
         the caller to execute backout conditional on state.
         """
+        if self.state == len(self.callbacks):
+            jlog.info("State machine has completed.")
+            return
         jlog.info('starting tick function, state is: ' + str(self.state))
         if self.setup:
             self.setup()
@@ -219,7 +224,7 @@ class StateMachine(object):
             jlog.info("Execution failed at step after: " + str(self.state) + \
                   ", backing out.")
             jlog.info("Error message: " + msg)
-            self.backout_callback(self.state)
+            reactor.callLater(0, self.backout_callback, msg)
             return False
         if self.finalize:
             if self.state > 2:
@@ -667,7 +672,8 @@ class CoinSwapRedeemTX23Timeout(CoinSwapTX):
         """
         assert self.fully_signed()
         script_to_serialize = [binascii.unhexlify(self.signatures[0][0])]
-        script_to_serialize += [None, self.signing_redeem_scripts[0]]
+        script_to_serialize += [None,
+                                binascii.unhexlify(self.signing_redeem_scripts[0])]
         rfs = btc.serialize_script(script_to_serialize)
         #Manually insert the customized refunding script
         txobj = btc.deserialize(self.base_form)
@@ -701,10 +707,17 @@ class CoinSwapParticipant(object):
         #currently only used by Carol; TODO
         self.phase2_ready = False
         self.tx4_confirmed = False
-        self.successful_tx3_redeem = False
+        self.successful_tx3_redeem = None
         self.sm = StateMachine(self.state, self.backout,
                                self.get_state_machine_callbacks())
         self.sm.set_finalize(self.finalize)        
+
+    def import_address(self, address):
+        """To support checking transactions, import
+        backout addresses to local wallet.
+        """
+        wallet_name = jm_single().bc_interface.get_wallet_name(self.wallet)
+        jm_single().bc_interface.add_watchonly_addresses([address], wallet_name)
 
     def generate_privkey(self):
         #always hex, with compressed flag
@@ -757,7 +770,7 @@ class CoinSwapParticipant(object):
         with open(self.state_file, "wb") as f:
             f.write(json.dumps(persisted_state, indent=4))
  
-    def backout(self, msg):
+    def backout(self, backoutmsg):
         from .alice import CoinSwapAlice
         from .carol import CoinSwapCarol
         """Uses current state to decide backing out action.
@@ -766,24 +779,26 @@ class CoinSwapParticipant(object):
         (Alice, Carol) is running in this executable. This
         point is relevant for testing only currently.
         """
-        jlog.info('BACKOUT: ' + msg)
-        jlog.info("Current state: " + str(self.state))
+        jlog.info('BACKOUT: ' + backoutmsg)
+        jlog.info("Current state: " + str(self.sm.state))
         jlog.info("I am: " + str(type(self)))
-        if self.state == 0:
+        if self.sm.state == 0:
             #Failure in negotiation; nothing to do
             jlog.info("Failure in parameter negotiation; no action required; "
                      "ending.")
             reactor.stop()
-        if (self.state in [-1, 0, 1, 2, 3]) or \
-           (isinstance(self, CoinSwapCarol) and self.state == 4):
+            return
+        if (isinstance(self, CoinSwapAlice) and self.sm.state in range(7)) or \
+           (isinstance(self, CoinSwapCarol) and self.sm.state in range(6)):
             #Alice/Carol created TX0/1 but didn't broadcast; no action required.
             #Alice/Carol may have sent signatures on spend-out transactions
             #but this is irrelevant as long as TX0/1 is not on the network.
             jlog.info("No funds have moved; no action required; ending.")
             reactor.stop()
+            return
         #Handling for later states depends on Alice/Carol
         if isinstance(self, CoinSwapAlice):
-            if self.state == 4:
+            if self.sm.state in [7, 8, 9]:
                 #Alice has broadcast TX0 but has not released the secret;
                 #therefore it's entirely safe to just wait for L0 and then
                 #redeem on the lock branch.
@@ -792,71 +807,87 @@ class CoinSwapParticipant(object):
                     jlog.info("Not ready to redeem the funds, "
                              "waiting for block: " + str(
                                  self.coinswap_parameters.timeouts["LOCK0"]))
-                    reactor.callLater(3.0, self.backout)
+                    reactor.callLater(3.0, self.backout, backoutmsg)
+                    return
                 msg, success = self.tx2.push()
                 if not success:
                     jlog.info("RPC error message: ", msg)
                     jlog.info("Failed to broadcast TX2; here is raw form: ")
                     jlog.info(self.tx2.fully_signed_tx)
                     reactor.stop()
+                    return
                 tx23_redeem = CoinSwapRedeemTX23Timeout(
                     self.coinswap_parameters.pubkeys["key_TX2_secret"],
                     self.hashed_secret,
-                    self.coinswap_parameters["timeouts"]["LOCK0"],
+                    self.coinswap_parameters.timeouts["LOCK0"],
                     self.coinswap_parameters.pubkeys["key_TX2_lock"],
                     self.tx2.txid + ":0",
                     self.coinswap_parameters.tx4_amount,
-                    self.coinswap_parameters.tx4_address)
+                    self.coinswap_parameters.tx5_address)
                 tx23_redeem.sign_at_index(self.keyset["key_TX2_lock"][0], 0)
                 msg, success = tx23_redeem.push()
                 if not success:
                     jlog.info("RPC error message: ", msg)
                     jlog.info("Failed to broadcast TX2 redeem; here is raw form: ")
                     jlog.info(tx23_redeem.fully_signed_tx)
+                else:
+                    jlog.info("Successfully reclaimed funds via TX2, to address: " +\
+                              self.coinswap_parameters.tx4_address)
                 reactor.stop()
-            elif self.state == 5:
-                #Carol has received the secret. Immediately (before L1),
-                #redeem TX3 using the secret.
+            elif self.sm.state == 10:
+                #Carol has received the secret, but we don't have the TX5 sig.
+                #Immediately (before L1), broadcast TX3 with the secret.
                 msg, success = self.tx3.push()
                 if not success:
                     jlog.info("RPC error message: ", msg)
                     jlog.info("Failed to broadcast TX3; here is raw form: ")
                     jlog.info(self.tx3.fully_signed_tx)
                     reactor.stop()
+                    return
                 tx23_secret = CoinSwapRedeemTX23Secret(self.secret,
                             self.coinswap_parameters.pubkeys["key_TX3_secret"],
                             self.coinswap_parameters.timeouts["LOCK1"],
                             self.coinswap_parameters.pubkeys["key_TX3_lock"],
                             self.tx3.txid + ":0",
-                            self.coinswap_parameters.tx3_recipient_amount,
+                            self.coinswap_parameters.tx5_amount,
                             self.coinswap_parameters.tx5_address)
                 tx23_secret.sign_at_index(self.keyset["key_TX3_secret"][0], 0)
+                jlog.info("Broadcasting TX3 redeem: ")
                 msg, success = tx23_secret.push()
+                jlog.info(tx23_secret)
                 if not success:
                     jlog.info("RPC error message: ", msg)
                     jlog.info("Failed to broadcast TX3 redeem; here is raw form: ")
                     jlog.info(tx23_secret.fully_signed_tx)
                 else:
-                    jlog.info("Redemption pushed successfully, txid: " + tx23_secret.txid)
-                    jlog.info("Here it is: " + str(tx23_secret))
+                    jlog.info("Successfully reclaimed funds via TX3, to address: " +\
+                              self.coinswap_parameters.tx5_address)
                 reactor.stop()
-            elif self.state in [6, 7]:
-                #We are now in possession of a valid TX4 signature; either we
+            elif self.sm.state in [11, 12, 13]:
+                #We are now in possession of a valid TX5 signature; either we
                 #already broadcast it, or we do so now.
-                if self.tx4.txid:
-                    jlog.info("TX4 was already broadcast: " + self.tx4.txid)
+                if self.tx5.txid:
+                    jlog.info("TX5 was already broadcast: " + self.tx5.txid)
                     jlog.info("Here is the raw form for re-broadcast: ")
-                    jlog.info(self.tx4.fully_signed_tx)
+                    jlog.info(self.tx5.fully_signed_tx)
                 else:
-                    self.tx4.sign_at_index(self.keyset["key_2_2_CB_1"][0], 1)
-                    errmsg, success = self.tx4.push()
+                    self.tx5.sign_at_index(self.keyset["key_2_2_CB_1"][0], 1)
+                    errmsg, success = self.tx5.push()
                     if not success:
-                        self.backout("Failed to push TX4, errmsg: " + errmsg)
+                        jlog.info("Failed to push TX5, errmsg: " + errmsg)
+                        jlog.info("Raw form: ")
+                        jlog.info(self.tx5.fully_signed_tx)
+                        jlog.info("Readable form: ")
+                        jlog.info(self.tx5)
+                    else:
+                        jlog.info("Successfully broadcast TX5, amount: " + \
+                                  str(self.tx5.output_amount) + \
+                                  " to address: " + self.tx5.output_address)
                 reactor.stop()
             else:
                 assert False
         elif isinstance(self, CoinSwapCarol):
-            if self.state in [5, 6, 7]:
+            if self.sm.state in [6, 7]:
                 #This is by far the trickiest case.
                 #
                 #We have valid signatures on TX3, we can broadcast and redeem it
@@ -880,7 +911,8 @@ class CoinSwapParticipant(object):
                     jlog.info("Not ready to redeem the funds, "
                              "waiting for block: " + str(
                                  self.coinswap_parameters.timeouts["LOCK1"]))
-                    reactor.callLater(3.0, self.backout)
+                    reactor.callLater(3.0, self.backout, backoutmsg)
+                    return
                 if bh > self.coinswap_parameters.timeouts["LOCK0"]:
                     jlog.info("CRITICAL WARNING: Too late, counterparty may "
                              "be able to double spend our redemption; attempting "
@@ -888,48 +920,98 @@ class CoinSwapParticipant(object):
                 #Broadcast TX3
                 msg, success = self.tx3.push()
                 if not success:
-                    jlog.info("RPC error message: ", msg)
-                    jlog.info("Failed to broadcast TX2; here is raw form: ")
+                    jlog.info("RPC error message: " + msg)
+                    jlog.info("Failed to broadcast TX3; here is raw form: ")
                     jlog.info(self.tx3.fully_signed_tx)
                     reactor.stop()
+                    return
                 #**CONSTRUCT TX3-redeem-timeout
                 tx23_redeem = CoinSwapRedeemTX23Timeout(
                     self.coinswap_parameters.pubkeys["key_TX3_secret"],
                     self.hashed_secret,
-                    self.coinswap_parameters["timeouts"]["LOCK1"],
+                    self.coinswap_parameters.timeouts["LOCK1"],
                     self.coinswap_parameters.pubkeys["key_TX3_lock"],
                     self.tx3.txid + ":0",
                     self.coinswap_parameters.tx5_amount,
                     self.coinswap_parameters.tx5_address)
                 tx23_redeem.sign_at_index(self.keyset["key_TX3_lock"][0], 0)
+                wallet_name = jm_single().bc_interface.get_wallet_name(self.wallet)
+                self.import_address(tx23_redeem.output_address)
                 msg, success = tx23_redeem.push()
+                jlog.info("Redeem tx: ")
+                jlog.info(tx23_redeem)
                 if not success:
-                    jlog.info("RPC error message: ", msg)
+                    jlog.info("RPC error message: " + msg)
                     jlog.info("Failed to broadcast TX3 redeem; here is raw form: ")
                     jlog.info(tx23_redeem.fully_signed_tx)
-                reactor.stop()
+                    jlog.info(tx23_redeem)
+                    reactor.stop()
+                    return
                 #Now fire a waiting loop that triggers on one of 2 events: (1)
                 #confirmation of above tx or (2) consumption of tx2 outpoint
                 #without (1) occurring, and take action.
                 self.carol_watcher_loop = task.LoopingCall(
-                    self.watch_for_tx3_spends, self.tx3.txid)
+                    self.watch_for_tx3_spends, tx23_redeem.txid)
                 self.carol_watcher_loop.start(3.0)
                 #Monitor for when the watching loop ends
                 self.carol_waiting_loop = task.LoopingCall(
                     self.react_to_tx3_spend)
                 self.carol_waiting_loop.start(3.0)
-            elif self.state == 8:
-                #We are now in possession of a valid TX5 signature; either we
-                #already broadcast it, or we do so now.
-                if self.tx5.txid:
-                    jlog.info("TX5 was already broadcast: " + self.tx5.txid)
-                    jlog.info("Here is the raw form for re-broadcast: ")
-                    jlog.info(self.tx5.fully_signed_tx)
+            elif self.sm.state == 8:
+                #Alice did not provide TX4 sig but we already allowed
+                #TX5 spend; we use X to redeem from TX2, before L0.
+                #No wait needed.
+                #Broadcast TX3
+                msg, success = self.tx2.push()
+                if not success:
+                    jlog.info("RPC error message: " + msg)
+                    jlog.info("Failed to broadcast TX2; here is raw form: ")
+                    jlog.info(self.tx2.fully_signed_tx)
+                    reactor.stop()
+                    return
+                #**CONSTRUCT TX2-redeem-secret; note tx*5* address is used.
+                tx2redeem_secret = CoinSwapRedeemTX23Secret(self.secret,
+                                self.coinswap_parameters.pubkeys["key_TX2_secret"],
+                                self.coinswap_parameters.timeouts["LOCK0"],
+                                self.coinswap_parameters.pubkeys["key_TX2_lock"],
+                                self.tx2.txid+":0",
+                                self.coinswap_parameters.tx4_amount,
+                                self.coinswap_parameters.tx4_address)
+                tx2redeem_secret.sign_at_index(self.keyset["key_TX2_secret"][0], 0)
+                wallet_name = jm_single().bc_interface.get_wallet_name(self.wallet)
+                self.import_address(tx2redeem_secret.output_address)
+                msg, success = tx2redeem_secret.push()
+                jlog.info("Redeem tx: ")
+                jlog.info(tx2redeem_secret)
+                if not success:
+                    jlog.info("RPC error message: " + msg)
+                    jlog.info("Failed to broadcast TX2 redeem; here is raw form: ")
+                    jlog.info(tx2redeem_secret.fully_signed_tx)
+                    jlog.info(tx2redeem_secret)
                 else:
-                    self.tx5.sign_at_index(self.keyset["key_2_2_AC_1"][0], 1)
-                    errmsg, success = self.tx5.push()
+                    jlog.info("Successfully redeemed funds via TX2, to address: "+\
+                              self.coinswap_parameters.tx4_address + ", in txid: " +\
+                              tx2redeem_secret.txid)
+                reactor.stop()
+            elif self.sm.state == 9:
+                #We are now in possession of a valid TX4 signature; either we
+                #already broadcast it, or we do so now.
+                if self.tx4.txid:
+                    jlog.info("TX4 was already broadcast: " + self.tx4.txid)
+                    jlog.info("Here is the raw form for re-broadcast: ")
+                    jlog.info(self.tx4.fully_signed_tx)
+                else:
+                    self.tx4.sign_at_index(self.keyset["key_2_2_AC_1"][0], 1)
+                    errmsg, success = self.tx4.push()
                     if not success:
-                        self.backout("Failed to push TX5, errmsg: " + errmsg)
+                        jlog.info("Failed to push TX4, errmsg: " + errmsg)
+                        jlog.info("Raw form: ")
+                        jlog.info(self.tx4.fully_signed_tx)
+                        jlog.info("Readable form: ")
+                        jlog.info(self.tx4)
+                    else:
+                        jlog.info("Successfully pushed TX4: " + self.tx4.txid + \
+                                  ", funds claimed OK, shutting down.")
                 reactor.stop()
             else:
                 assert False
