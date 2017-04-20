@@ -15,6 +15,9 @@ import time
 import os
 import sys
 
+def shutdown_block_simulator():
+    jm_single().bc_interface.send_thread_shutdown()
+
 def main():
     log.startLogging(sys.stdout)
     wallet_name = sys.argv[1]
@@ -23,6 +26,8 @@ def main():
     if isinstance(jm_single().bc_interface, RegtestBitcoinCoreInterface):
         jm_single().bc_interface.tick_forward_chain_interval = 2
         jm_single().bc_interface.simulating = True
+        jm_single().config.set("BLOCKCHAIN", "notify_port", "62653")
+        jm_single().config.set("BLOCKCHAIN", "rpc_host", "127.3.0.2")
     #depth 0: spend in, depth 1: receive out, depth 2: for backout transactions.
     max_mix_depth = 3
     if not os.path.exists(os.path.join('wallets', wallet_name)):

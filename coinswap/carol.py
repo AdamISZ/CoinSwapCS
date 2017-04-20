@@ -55,21 +55,16 @@ class CoinSwapCarol(CoinSwapParticipant):
                                   "key_TX2_secret", "key_TX3_lock"]
 
     def get_state_machine_callbacks(self):
-        """Return the callbacks for each state transition.
-        For each a boolean flag is used to indicate whether
-        it should be automatically triggered by the previous
-        state transition completing.
-        """
-        return [(self.handshake, False),
-                (self.negotiate_coinswap_parameters, False),
-                (self.receive_tx0_hash_tx2sig, False),
-                (self.send_tx1id_tx2_sig_tx3_sig, True),
-                (self.receive_tx3_sig, False),
-                (self.push_tx1, False),
-                (self.receive_secret, False),
-                (self.send_tx5_sig, True),
-                (self.receive_tx4_sig, False),
-                (self.broadcast_tx4, True)]
+        return [(self.handshake, False, -1),
+                (self.negotiate_coinswap_parameters, False, -1),
+                (self.receive_tx0_hash_tx2sig, False, -1),
+                (self.send_tx1id_tx2_sig_tx3_sig, True, -1),
+                (self.receive_tx3_sig, False, -1),
+                (self.push_tx1, False, 30), #alice waits for confirms before sending secret
+                (self.receive_secret, False, -1),
+                (self.send_tx5_sig, True, 30), #alice waits for confirms on TX5 before sending TX4 sig
+                (self.receive_tx4_sig, False, -1),
+                (self.broadcast_tx4, True, -1)] #we shut down on broadcast here.
 
     def set_handshake_parameters(self, source_chain="BTC",
                                  destination_chain="BTC",
@@ -155,11 +150,13 @@ class CoinSwapCarol(CoinSwapParticipant):
                 refund_pubkey=self.coinswap_parameters.pubkeys["key_TX2_lock"])
         if not self.tx2.include_signature(0, tx2sig):
             return (False, "Counterparty sig for TX2 invalid; backing out.")
+        #create our own signature for it
+        self.tx2.sign_at_index(self.keyset["key_2_2_AC_1"][0], 1)
+        self.tx2.attach_signatures()
+        self.watch_for_tx(self.tx2)
         return (True, "OK")
 
     def send_tx1id_tx2_sig_tx3_sig(self):
-        #create our own signature for it
-        self.tx2.sign_at_index(self.keyset["key_2_2_AC_1"][0], 1)
         our_tx2_sig = self.tx2.signatures[0][1]
 
         #**CONSTRUCT TX1**
@@ -226,6 +223,8 @@ class CoinSwapCarol(CoinSwapParticipant):
             return (False, "TX3 signature received is invalid")
         jlog.info("Carol now has fully signed TX3:")
         jlog.info(self.tx3)
+        self.tx3.attach_signatures()
+        self.watch_for_tx(self.tx3)
         #wait until TX0 is seen before pushing ours.
         self.loop = task.LoopingCall(self.check_for_phase1_utxos, [self.txid0])
         self.loop.start(3.0)        
@@ -280,7 +279,11 @@ class CoinSwapCarol(CoinSwapParticipant):
         sig = self.tx5.signatures[0][0]
         return (sig, "OK")
     
-    def receive_tx4_sig(self, sig):
+    def receive_tx4_sig(self, sig, txid5):
+        """Receives and validates signature on TX4, and the TXID
+        for TX5 (purely for convenience, not checked.
+        """
+        self.txid5 = txid5
         self.tx4 = CoinSwapTX45.from_params(
             self.coinswap_parameters.pubkeys["key_2_2_AC_0"],
             self.coinswap_parameters.pubkeys["key_2_2_AC_1"],
@@ -317,6 +320,7 @@ class CoinSwapCarol(CoinSwapParticipant):
         jlog.info(pformat(self.bbmb))
         jlog.info("Wallet after: ")
         jlog.info(pformat(self.bbma))
+        self.final_report()
 
     def is_tx4_confirmed(self):
         if self.tx4_confirmed:
@@ -324,94 +328,105 @@ class CoinSwapCarol(CoinSwapParticipant):
         else:
             return False
 
+    def find_secret_from_tx3_redeem(self, expected_txid=None):
+        """Given a txid assumed to be a transaction which spends from TX1
+        (so must be TX3 whether ours or theirs, since this is the only
+        doubly-signed tx), and assuming it has been spent from (so this
+        function is only called if redeeming TX3 fails), find the redeeming
+        transaction and extract the coinswap secret from its scriptSig(s).
+        The secret is returned.
+        If expected_txid is provided, checks that this is the redeeming txid,
+        in which case returns "True".
+        """
+        assert self.tx3.spending_tx
+        deser_spending_tx = btc.deserialize(self.tx3.spending_tx)
+        vins = deser_spending_tx['ins']
+        self.secret = get_secret_from_vin(vins, self.hashed_secret)
+        if not self.secret:
+            jlog.info("Critical error; TX3 spent but no "
+                      "coinswap secret was found.")
+            return False
+        return self.secret
+
+    def redeem_tx3_with_lock(self):
+        """Must be called after LOCK1, and TX3 must be
+        broadcast but not-already-spent. Returns True if succeeds
+        in broadcasting a redemption (to tx5_address), False otherwise.
+        """
+        #**CONSTRUCT TX3-redeem-timeout
+        self.tx3redeem = CoinSwapRedeemTX23Timeout(
+            self.coinswap_parameters.pubkeys["key_TX3_secret"],
+            self.hashed_secret,
+            self.coinswap_parameters.timeouts["LOCK1"],
+            self.coinswap_parameters.pubkeys["key_TX3_lock"],
+            self.tx3.txid + ":0",
+            self.coinswap_parameters.tx5_amount,
+            self.coinswap_parameters.tx5_address)
+        self.tx3redeem.sign_at_index(self.keyset["key_TX3_lock"][0], 0)
+        wallet_name = jm_single().bc_interface.get_wallet_name(self.wallet)
+        self.import_address(self.tx3redeem.output_address)
+        msg, success = self.tx3redeem.push()
+        jlog.info("Redeem tx: ")
+        jlog.info(self.tx3redeem)
+        if not success:
+            jlog.info("RPC error message: " + msg)
+            jlog.info("Failed to broadcast TX3 redeem; here is raw form: ")
+            jlog.info(self.tx3redeem.fully_signed_tx)
+            jlog.info("Readable form: ")
+            jlog.info(self.tx3redeem)
+            return False
+        return True
+
+    def redeem_tx2_with_secret(self):
+        #Broadcast TX3
+        msg, success = self.tx2.push()
+        if not success:
+            jlog.info("RPC error message: " + msg)
+            jlog.info("Failed to broadcast TX2; here is raw form: ")
+            jlog.info(self.tx2.fully_signed_tx)
+            return
+        #**CONSTRUCT TX2-redeem-secret; note tx*5* address is used.
+        tx2redeem_secret = CoinSwapRedeemTX23Secret(self.secret,
+                        self.coinswap_parameters.pubkeys["key_TX2_secret"],
+                        self.coinswap_parameters.timeouts["LOCK0"],
+                        self.coinswap_parameters.pubkeys["key_TX2_lock"],
+                        self.tx2.txid+":0",
+                        self.coinswap_parameters.tx4_amount,
+                        self.coinswap_parameters.tx4_address)
+        tx2redeem_secret.sign_at_index(self.keyset["key_TX2_secret"][0], 0)
+        wallet_name = jm_single().bc_interface.get_wallet_name(self.wallet)
+        self.import_address(tx2redeem_secret.output_address)
+        msg, success = tx2redeem_secret.push()
+        jlog.info("Redeem tx: ")
+        jlog.info(tx2redeem_secret)
+        if not success:
+            jlog.info("RPC error message: " + msg)
+            jlog.info("Failed to broadcast TX2 redeem; here is raw form: ")
+            jlog.info(tx2redeem_secret.fully_signed_tx)
+            jlog.info(tx2redeem_secret)
+        else:
+            jlog.info("Successfully redeemed funds via TX2, to address: "+\
+                      self.coinswap_parameters.tx4_address + ", in txid: " +\
+                      tx2redeem_secret.txid)
+
     def watch_for_tx3_spends(self, redeeming_txid):
         """Function used to check whether our, or a competing
         tx, successfully spends out of TX3. Meant to be polled.
         """
         assert self.sm.state in [6, 7, 8]
-        spent = detect_spent(self.tx3.txid, 0, unconf=True)
-        if not spent:
+        if self.tx3redeem.is_confirmed:
+            self.carol_watcher_loop.stop()
+            jlog.info("Redeemed funds via TX3 OK, txid of redeeming transaction "
+                      "is: " + self.tx3redeem.txid)
             return
-        #It was spent; did we receive it?
-        #Crude method: get the txid of each new transaction from listtransaction
-        #(pay attention to order)
-        #pass it to getrawtransaction 1 (so serialized)
-        #read the input txids.
-        jlog.info("TX3 (" + self.tx3.txid + "), was spent.")
-        #list the recent transactions (TODO)
-        wallet_name = jm_single().bc_interface.get_wallet_name(self.wallet)
-        recent_txs = jm_single().bc_interface.rpc("listtransactions",
-                                                  [wallet_name, 100, 0, True])
-        for rt in recent_txs:
-            try:
-                txid = rt["txid"]
-                rawtx = jm_single().bc_interface.rpc("getrawtransaction", [txid, 1])
-            except:
-                continue
-            #check if inputs are from TX1:
-            for vin in rawtx["vin"]:
-                if "txid" not in vin:
-                    #coinbase transactions
-                    continue
-                if vin["txid"] == self.tx3.txid:
-                    jlog.info("Found transaction which spent TX3: " + self.tx3.txid)
-                    if txid == redeeming_txid:
-                        jlog.info("Our spend of TX3 was successful")
-                        self.successful_tx3_redeem = True
-                        self.carol_watcher_loop.stop()
-                        return
-                    else:
-                        #We were double spent on. We need to store the consumed
-                        #secret before falling back to TX2 spend. In state 6+,
-                        #we already have the secret.
-                        if not self.secret:
-                            self.secret = get_secret_from_vin(rawtx["vin"],
-                                                              self.hashed_secret)
-                            if not self.secret:
-                                jlog.info("Critical error; TX3 spent but no "
-                                         "coinswap secret was found.")
-                                reactor.stop()
-                        self.successful_tx3_redeem = False
-                        self.carol_watcher_loop.stop()
-                        return
-        #reaching end of tx loop means no spend found, allow loop to continue
-
-    def react_to_tx3_spend(self):
-        if self.successful_tx3_redeem is None:
-            return
-        if self.successful_tx3_redeem:
-            jlog.info("Our back-out via TX3 was successful, funds were returned "
-                     "in this TXID: " + self.tx3.txid)
-            jlog.info("Ending.")
-            reactor.stop()
-            #self.carol_waiting_loop.stop()
-        else:
-            jlog.info("Our back-out via TX3 was unsuccessful; we retrieved "
-                     "the secret X from the double spend tx: " + self.secret)
-            jlog.info("We will now spend out from TX2 using the secret.")
-            #push TX2; construct TX2-redeem-on-secret; spend.
-            #note we already checked/warned if after LOCK0, but nothing else
-            #left to try anyway.
-            msg, success = self.tx2.push()
-            if not success:
-                jlog.info("RPC error message: ", msg)
-                jlog.info("Failed to broadcast TX2; here is raw form: ")
-                jlog.info(self.tx2.fully_signed_tx)
+        if self.tx3.is_spent:
+            if btc.txhash(self.tx3.spending_tx) != redeeming_txid:
+                jlog.info("Detected TX3 spent by other party; backing out to TX2")
+                retval = self.find_secret_from_tx3_redeem()
+                if not retval:
+                    jlog.info("CRITICAL ERROR: Failed to find secret from TX3 redeem.")
+                    reactor.stop()
+                    return
+                self.redeem_tx2_with_secret()
                 reactor.stop()
-            tx2redeem_secret = CoinSwapRedeemTX23Secret(self.secret,
-                                self.coinswap_parameters.pubkeys["key_TX2_secret"],
-                                self.coinswap_parameters.timeouts["LOCK0"],
-                                self.coinswap_parameters.pubkeys["key_TX2_lock"],
-                                self.tx2.txid+":0",
-                                self.coinswap_parameters.tx4_amount,
-                                self.coinswap_parameters.tx4_address)
-            tx2redeem_secret.sign_at_index(self.keyset["key_TX2_secret"][0], 0)
-            msg, success = tx2redeem_secret.push()
-            if not success:
-                jlog.info("RPC error message: ", msg)
-                jlog.info("Failed to broadcast TX2 redemption; here is raw form: ")
-                jlog.info(tx2redeem_secret.fully_signed_tx)
-                reactor.stop()
-            jlog.info("Successfully pushed redemption from TX2, txid is: " + \
-                     tx2redeem_secret.txid)
-            reactor.stop()
+                return

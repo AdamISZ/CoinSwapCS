@@ -58,25 +58,20 @@ class CoinSwapAlice(CoinSwapParticipant):
         self.jsonrpcclient = jsonrpcclient
     
     def get_state_machine_callbacks(self):
-        """Return the callbacks for each state transition.
-        For each a boolean flag is used to indicate whether
-        it should be automatically triggered by the previous
-        state transition completing.
-        """
-        return [(self.handshake, False),
-                (self.negotiate_coinswap_parameters, False),
-                (self.complete_negotiation, False),
-                (self.send_tx0id_hx_tx2sig, True),
-                (self.receive_txid1_tx23sig, False),
-                (self.send_tx3, True),
-                (self.broadcast_tx0, False),
-                (self.see_tx0_tx1, True),
-                (self.wait_for_phase_2, False),
-                (self.send_coinswap_secret, False),
-                (self.receive_tx5_sig, False),
-                (self.broadcast_tx5, True),
-                (self.send_tx4_sig, False),
-                (self.confirm_tx4_sig_receipt, False)]
+        return [(self.handshake, False, -1),
+                (self.negotiate_coinswap_parameters, False, -1),
+                (self.complete_negotiation, False, -1),
+                (self.send_tx0id_hx_tx2sig, True, -1),
+                (self.receive_txid1_tx23sig, False, -1),
+                (self.send_tx3, True, -1),
+                (self.broadcast_tx0, False, -1),
+                (self.see_tx0_tx1, True, -1),
+                (self.wait_for_phase_2, False, 30), #only updates after conf
+                (self.send_coinswap_secret, False, -1),
+                (self.receive_tx5_sig, False, -1),
+                (self.broadcast_tx5, True, 30), #only updates after conf
+                (self.send_tx4_sig, False, -1),
+                (self.confirm_tx4_sig_receipt, False, 30)] #only updates after conf
 
     def send(self, *args):
         """The state machine state maps to a specific call in the
@@ -211,8 +206,11 @@ class CoinSwapAlice(CoinSwapParticipant):
         self.txid1 = txid1
         if not self.tx2.include_signature(1, sigtx2):
             return (False, "Counterparty signature for TX2 invalid.")
-        jlog.info("Alice now has partially signed TX2:")
+        jlog.info("Alice now has completely signed TX2:")
         jlog.info(self.tx2)
+        #TX2 must now be watched for updates
+        self.tx2.attach_signatures()
+        self.watch_for_tx(self.tx2)
         #**CONSTRUCT TX3**
         #,using TXID1 as input; note "txid1" is a utxo string,
         self.tx3 = CoinSwapTX23.from_params(
@@ -226,11 +224,14 @@ class CoinSwapAlice(CoinSwapParticipant):
                 refund_pubkey=self.coinswap_parameters.pubkeys["key_TX3_lock"])
         if not self.tx3.include_signature(0, sigtx3):
             return (False, "Counterparty signature for TX3 invalid.")
+        #TX3 must be watched for updates
+        #create our own signature for it
+        self.tx3.sign_at_index(self.keyset["key_2_2_CB_1"][0], 1)
+        self.tx3.attach_signatures()
+        self.watch_for_tx(self.tx3)
         return (True, "Received TX1id, TX2sig, TX3 sig OK.")
 
     def send_tx3(self):
-        #create our own signature for it
-        self.tx3.sign_at_index(self.keyset["key_2_2_CB_1"][0], 1)
         sig = self.tx3.signatures[0][1]
         self.send(sig)
         return (True, "Sent TX3 sig OK.")
@@ -300,7 +301,7 @@ class CoinSwapAlice(CoinSwapParticipant):
         self.tx5.sign_at_index(self.keyset["key_2_2_CB_1"][0], 1)
         errmsg, success = self.tx5.push()
         if not success:
-            return (False, "Failed to push TX4, errmsg: " + errmsg)
+            return (False, "Failed to push TX5, errmsg: " + errmsg)
         self.loop_tx5 = task.LoopingCall(self.wait_for_tx5_confirmation)
         self.loop_tx5.start(3.0)
         return (True, "TX5 broadcast OK")
@@ -330,7 +331,7 @@ class CoinSwapAlice(CoinSwapParticipant):
                                         destination_amount=self.coinswap_parameters.tx4_amount)
         self.tx4.sign_at_index(self.keyset["key_2_2_AC_0"][0], 0)
         sig = self.tx4.signatures[0][0]
-        self.send(sig)
+        self.send(sig, self.tx5.txid)
         self.loop_tx4 = task.LoopingCall(self.wait_for_tx4_confirmation)
         self.loop_tx4.start(3.0)        
         return (True, "TX4 signature sent.")

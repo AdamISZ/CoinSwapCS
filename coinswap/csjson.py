@@ -72,7 +72,7 @@ class CoinSwapCarolJSONServer(jsonrpc.JSONRPC):
         return self.carol.is_phase2_ready()
     def jsonrpc_secret(self, secret):
         return self.carol.sm.tick_return("receive_secret", secret)
-    def jsonrpc_sigtx4(self, sig):
-        return self.carol.sm.tick_return("receive_tx4_sig", sig)
+    def jsonrpc_sigtx4(self, sig, txid5):
+        return self.carol.sm.tick_return("receive_tx4_sig", sig, txid5)
     def jsonrpc_confirm_tx4(self):
         return self.carol.is_tx4_confirmed()
