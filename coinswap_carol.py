@@ -46,8 +46,16 @@ def main():
     jm_single().bc_interface.grab_coins(carolwallet.get_new_addr(0, 0), 2.0)
     time.sleep(3)
     sync_wallet(carolwallet)
+    #if restart option selected, read state and backout
+    #(TODO is to attempt restarting normally before backing out)
+    if sys.argv[2].lower() == 'true':
+        carol = CoinSwapCarol(carolwallet, 'carolstate.json')
+        carol.bbmb = carolwallet.get_balance_by_mixdepth()
+        carol.load()
+        carol.backout("Recovering from shutdown")
+        return
     tx01_amount, tx24_recipient_amount, tx35_recipient_amount = [int(
-        x) for x in sys.argv[2:5]]
+        x) for x in sys.argv[3:6]]
     tx4address = carolwallet.get_new_addr(1, 1)
     #For now let's use a simple default of 10 blocks for LOCK1 and 20 for LOCK0
     current_blockheight = get_current_blockheight()

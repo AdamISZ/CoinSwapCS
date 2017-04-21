@@ -25,6 +25,7 @@ import inspect
 #from .carol import CoinSwapCarol
 
 COINSWAP_SECRET_ENTROPY_BYTES = 14
+SIMPLECS_VERSION = 0.1
 
 jlog = get_log()
 
@@ -207,7 +208,12 @@ class StateMachine(object):
         if self.finalize:
             if self.state > 2:
                 self.finalize()
-        jlog.info("State: " + str(self.state -1) + " finished OK.")      
+        jlog.info("State: " + str(self.state -1) + " finished OK.")
+        #create a monitor call that's woken up after timeout; if we didn't
+        #update, something is wrong, so backout
+        if self.state < len(self.callbacks):
+            reactor.callLater(self.timeouts[self.state],
+                              self.stallMonitor, self.state)
         if self.state in self.auto_continue:
             return self.tick_return(self.callbacks[self.state].__name__)
         return retval
@@ -285,7 +291,13 @@ class CoinSwapTX(object):
     only need to override sign_at_index in case there is more
     than one input signing pubkey.
     """
-        
+    attr_list = ['utxo_ins', 'signing_pubkeys', 'signing_redeem_scripts',
+                  'signatures', 'output_address', 'change_address',
+                  'output_script', 'change_script', 'output_amount',
+                  'change_amount', 'locktime', 'outs', 'pay_out_index',
+                  'base_form', 'fully_signed_tx', 'completed', 'txid',
+                  'is_spent', 'is_confirmed', 'is_broadcast', 'spending_tx']
+
     def __init__(self,
                  utxo_ins,
                  output_address,
@@ -450,28 +462,21 @@ class CoinSwapTX(object):
                 msg.append("Txid: " + self.txid)
         else:
             msg.append("Fully signed.")
-            msg.append("Txid: " + self.txid)
+            if self.txid:
+                msg.append("Txid: " + self.txid)
             tx = self.fully_signed_tx
         dtx = btc.deserialize(tx)
         return pformat(dtx) + "\n" + "\n".join(msg)
 
     def serialize(self):
         p = {}
-        for v in ['utxo_ins', 'signing_pubkeys', 'signing_redeem_scripts',
-                  'signatures', 'output_address', 'change_address',
-                  'output_script', 'change_script', 'output_amount',
-                  'change_amount', 'locktime', 'outs', 'pay_out_index',
-                  'base_form', 'fully_signed_tx', 'completed', 'txid']:
+        for v in self.attr_list:
             p[v] = getattr(self, v)
         return p
 
     def deserialize(self, d):
         try:
-            for v in ['utxo_ins', 'signing_pubkeys', 'signing_redeem_scripts',
-                  'signatures', 'output_address', 'change_address',
-                  'output_script', 'change_script', 'output_amount',
-                  'change_amount', 'locktime', 'outs', 'pay_out_index',
-                  'base_form', 'fully_signed_tx', 'completed', 'txid']:
+            for v in self.attr_list:
                 setattr(self, v, d[v])
             return True
         except:
@@ -733,7 +738,8 @@ class CoinSwapParticipant(object):
 
     def __init__(self, wallet, state_file, cpp=None): 
         self.coinswap_parameters = cpp
-        assert isinstance(self.coinswap_parameters, CoinSwapPublicParameters)
+        if self.coinswap_parameters:
+            assert isinstance(self.coinswap_parameters, CoinSwapPublicParameters)
         self.generate_keys()
         assert isinstance(wallet, Wallet)
         self.state_file = state_file
@@ -791,12 +797,28 @@ class CoinSwapParticipant(object):
         self.keyset = loaded_state['keyset']
         self.secret = loaded_state['coinswap_secret_data']['preimage']
         self.hashed_secret = loaded_state['coinswap_secret_data']['hash']
-        for n, t in zip(("TX0", "TX1", "TX2", "TX3", "TX4", "TX5"),
+        #TODO: this less repetitive version doesn't work for some reason
+        """
+        for n, t, tt in zip(("TX0", "TX1", "TX2", "TX3", "TX4", "TX5"),
                         (CoinSwapTX01, CoinSwapTX01, CoinSwapTX23,
-                         CoinSwapTX23, CoinSwapTX45, CoinSwapTX45)):
+                         CoinSwapTX23, CoinSwapTX45, CoinSwapTX45),
+                        (self.tx0, self.tx1, self.tx2,
+                         self.tx3, self.tx4, self.tx5)):
             if n in loaded_state:
-                var = getattr(self, n.lower())
-                var = t.from_dict(loaded_state[n])
+                tt = t.from_dict(loaded_state[n])
+        """
+        if "TX0" in loaded_state:
+            self.tx0 = CoinSwapTX01.from_dict(loaded_state["TX0"])
+        if "TX1" in loaded_state:
+            self.tx1 = CoinSwapTX01.from_dict(loaded_state["TX1"])
+        if "TX2" in loaded_state:
+            self.tx2 = CoinSwapTX23.from_dict(loaded_state["TX2"])
+        if "TX3" in loaded_state:
+            self.tx3 = CoinSwapTX23.from_dict(loaded_state["TX3"])
+        if "TX4" in loaded_state:
+            self.tx4 = CoinSwapTX45.from_dict(loaded_state["TX4"])
+        if "TX5" in loaded_state:
+            self.tx5 = CoinSwapTX45.from_dict(loaded_state["TX5"])
 
     def persist(self):
         """In principle the following dataset is sufficient to recover to
@@ -833,6 +855,12 @@ class CoinSwapParticipant(object):
         (Alice, Carol) is running in this executable. This
         point is relevant for testing only currently.
         """
+
+        #generic end function
+        def quit(complete=True, failed=False):
+            self.final_report(complete=complete, failed=failed)
+            reactor.stop()
+
         jlog.info('BACKOUT: ' + backoutmsg)
         jlog.info("Current state: " + str(self.sm.state))
         if self.sm.state == 0:
@@ -864,11 +892,10 @@ class CoinSwapParticipant(object):
                     return
                 msg, success = self.tx2.push()
                 if not success:
-                    jlog.info("RPC error message: ", msg)
+                    jlog.info("RPC error message: " + msg)
                     jlog.info("Failed to broadcast TX2; here is raw form: ")
                     jlog.info(self.tx2.fully_signed_tx)
-                    reactor.stop()
-                    return
+                    return quit(False, True)
                 tx23_redeem = CoinSwapRedeemTX23Timeout(
                     self.coinswap_parameters.pubkeys["key_TX2_secret"],
                     self.hashed_secret,
@@ -885,8 +912,8 @@ class CoinSwapParticipant(object):
                     jlog.info(tx23_redeem.fully_signed_tx)
                 else:
                     jlog.info("Successfully reclaimed funds via TX2, to address: " +\
-                              self.coinswap_parameters.tx4_address)
-                reactor.stop()
+                              self.coinswap_parameters.tx5_address)
+                return quit(False, not success)
             elif self.sm.state == 10:
                 #Carol has received the secret, but we don't have the TX5 sig.
                 #Immediately (before L1), broadcast TX3 with the secret.
@@ -895,8 +922,7 @@ class CoinSwapParticipant(object):
                     jlog.info("RPC error message: ", msg)
                     jlog.info("Failed to broadcast TX3; here is raw form: ")
                     jlog.info(self.tx3.fully_signed_tx)
-                    reactor.stop()
-                    return
+                    return quit(False, True)
                 tx23_secret = CoinSwapRedeemTX23Secret(self.secret,
                             self.coinswap_parameters.pubkeys["key_TX3_secret"],
                             self.coinswap_parameters.timeouts["LOCK1"],
@@ -915,7 +941,7 @@ class CoinSwapParticipant(object):
                 else:
                     jlog.info("Successfully reclaimed funds via TX3, to address: " +\
                               self.coinswap_parameters.tx5_address)
-                reactor.stop()
+                return quit(False, not success)
             elif self.sm.state in [11, 12, 13]:
                 #We are now in possession of a valid TX5 signature; either we
                 #already broadcast it, or we do so now.
@@ -936,7 +962,7 @@ class CoinSwapParticipant(object):
                         jlog.info("Successfully broadcast TX5, amount: " + \
                                   str(self.tx5.output_amount) + \
                                   " to address: " + self.tx5.output_address)
-                reactor.stop()
+                return quit(True, False)
             else:
                 assert False
         elif isinstance(self, CoinSwapCarol):
@@ -953,8 +979,8 @@ class CoinSwapParticipant(object):
                 #0. Wait for LOCK 1.
                 #1. broadcast the lock1 TX3.
                 #1a. if broadcast fails, it's because Alice spent TX3;
-                #1b. tx-notify has kept track of TX3 spending and recorded txid
-                #    of the redeeming transaction tx3-redeem.
+                #1b. tx-notify has kept track of TX3 spending and recorded
+                #    the redeeming transaction tx3-redeem.
                 #1c. Read the secret from tx3-redeem,
                 #    construct TX2 and redeem from it (same as 4-7).
                 #2. TX3 broadcast succeeded. Broadcast a spend-out using the LOCK1 branch.
@@ -990,8 +1016,7 @@ class CoinSwapParticipant(object):
                         jlog.info(self.tx3.fully_signed_tx)
                         jlog.info("Readable form: ")
                         jlog.info(self.tx3)
-                        reactor.stop()
-                        return
+                        return quit(False, True)
                 if self.tx3.is_spent:
                     jlog.info("Detected TX3 already spent by Alice. "
                               "Extracting secret and then redeeming TX2.")
@@ -1001,17 +1026,14 @@ class CoinSwapParticipant(object):
                     if not secret:
                         jlog.info("CRITICAL ERROR: Failed to retrieve secret "
                                   "from TX3 broadcast by Alice.")
-                        reactor.stop()
-                        return
+                        return quit(False, True)
                     self.redeem_tx2_with_secret()
                     #tx2 redemption cannot be conflicted before L0, so
                     #safe to return
-                    reactor.stop()
-                    return
+                    return quit(False, False)
                 else:
                     if not self.redeem_tx3_with_lock():
-                        reactor.stop()
-                        return
+                        return quit(False, True)
                     #need to monitor for state updates to this transaction
                     self.watch_for_tx(self.tx3redeem)
                     #If we reached this point, we have broadcast a TX3 redeem,
@@ -1028,7 +1050,7 @@ class CoinSwapParticipant(object):
                 #TX5 spend; we use X to redeem from TX2, before L0.
                 #No wait needed.
                 self.redeem_tx2_with_secret()
-                reactor.stop()
+                return quit(False, False)
             elif self.sm.state == 9:
                 #We are now in possession of a valid TX4 signature; either we
                 #already broadcast it, or we do so now.
@@ -1036,6 +1058,7 @@ class CoinSwapParticipant(object):
                     jlog.info("TX4 was already broadcast: " + self.tx4.txid)
                     jlog.info("Here is the raw form for re-broadcast: ")
                     jlog.info(self.tx4.fully_signed_tx)
+                    return quit(True, False)
                 else:
                     self.tx4.sign_at_index(self.keyset["key_2_2_AC_1"][0], 1)
                     errmsg, success = self.tx4.push()
@@ -1048,7 +1071,7 @@ class CoinSwapParticipant(object):
                     else:
                         jlog.info("Successfully pushed TX4: " + self.tx4.txid + \
                                   ", funds claimed OK, shutting down.")
-                reactor.stop()
+                    return quit(False, not success)
             else:
                 assert False
 
@@ -1083,31 +1106,54 @@ class CoinSwapParticipant(object):
                                  btc.privkey_to_pubkey(self.keyset_keys[i]))
         #keys will be stored on first persist, after parameters negotiated.
 
-    def final_report(self):
-        """Simple text summary of coinswap in co-operative case,
-        for both sides.
+    def final_report(self, complete=True, failed=False):
+        """Simple text summary of coinswap in co-operative and
+        non-co-operative case, for both sides.
         """
-        report_msg = ["Coinswap completed OK."]
-        report_msg.append("**************")
-        report_msg.append("Pay in transaction from Alice to 2-of-2:")
-        rtxid0 = self.tx0.txid if self.tx0 else self.txid0
-        report_msg.append("Txid: " + rtxid0)
-        report_msg.append("Amount: " + str(self.coinswap_parameters.tx0_amount))
-        report_msg.append("Pay in transaction from Carol to 2-of-2:")
-        rtxid1 = self.tx1.txid if self.tx1 else self.txid1
-        report_msg.append("Txid: " + rtxid1)
-        report_msg.append("Amount: " + str(self.coinswap_parameters.tx1_amount))
-        report_msg.append("Pay out transaction from 2-of-2 to Carol:")
-        rtxid4 = self.tx4.txid if self.tx4.txid else self.txid4
-        report_msg.append("Txid: " + rtxid4)
-        report_msg.append("Receiving address: " + self.coinswap_parameters.tx4_address)
-        report_msg.append("Amount: " + str(self.coinswap_parameters.tx4_amount))
-        report_msg.append("Pay out transaction from 2-of-2 to Alice:")
-        rtxid5 = self.tx5.txid if self.tx5.txid else self.txid5
-        report_msg.append("Txid: " + rtxid5)
-        report_msg.append("Receiving address: " + self.coinswap_parameters.tx5_address)
-        report_msg.append("Amount: " + str(self.coinswap_parameters.tx5_amount))
-        
+        #small wait in case unconfirmed txs not yet seen in mempool
+        time.sleep(5)
+        sync_wallet(self.wallet)
+        self.bbma = self.wallet.get_balance_by_mixdepth()
+        jlog.info("Wallet before: ")
+        jlog.info(pformat(self.bbmb))
+        jlog.info("Wallet after: ")
+        jlog.info(pformat(self.bbma))
+        if complete:
+            report_msg = ["Coinswap completed OK."]
+            report_msg.append("**************")
+            report_msg.append("Pay in transaction from Alice to 2-of-2:")
+            rtxid0 = self.tx0.txid if self.tx0 else self.txid0
+            report_msg.append("Txid: " + rtxid0)
+            report_msg.append("Amount: " + str(self.coinswap_parameters.tx0_amount))
+            report_msg.append("Pay in transaction from Carol to 2-of-2:")
+            rtxid1 = self.tx1.txid if self.tx1 else self.txid1
+            report_msg.append("Txid: " + rtxid1)
+            report_msg.append("Amount: " + str(self.coinswap_parameters.tx1_amount))
+            report_msg.append("Pay out transaction from 2-of-2 to Carol:")
+            rtxid4 = self.tx4.txid if self.tx4.txid else self.txid4
+            report_msg.append("Txid: " + rtxid4)
+            report_msg.append("Receiving address: " + self.coinswap_parameters.tx4_address)
+            report_msg.append("Amount: " + str(self.coinswap_parameters.tx4_amount))
+            report_msg.append("Pay out transaction from 2-of-2 to Alice:")
+            rtxid5 = self.tx5.txid if self.tx5.txid else self.txid5
+            report_msg.append("Txid: " + rtxid5)
+            report_msg.append("Receiving address: " + self.coinswap_parameters.tx5_address)
+            report_msg.append("Amount: " + str(self.coinswap_parameters.tx5_amount))
+        else:
+            if not failed:
+                report_msg = ["Coinswap is finished and funds reclaimed, but we "
+                              "did not complete the protocol normally."]
+            else:
+                report_msg = ["Coinswap did NOT finish successfully. You may "
+                              "need to take further action."]
+            for t in [self.tx0, self.tx1, self.tx2, self.tx3, self.tx4, self.tx5]:
+                #This does not give all relevant information (in particular, the
+                #redeem transactions), TODO
+                if t and t.txid:
+                    report_msg += ["We pushed transaction: " + t.txid]
+                    report_msg += ["Amount: " + str(t.output_amount)]
+                    report_msg += ["To address: " + t.output_address]
+
         jlog.info("\n" + "\n".join(report_msg))
 
     @abc.abstractmethod

@@ -19,7 +19,9 @@ def shutdown_block_simulator():
     jm_single().bc_interface.send_thread_shutdown()
 
 def main():
+    #twisted logging (TODO disable for non-debug runs)
     log.startLogging(sys.stdout)
+    #Joinmarket wallet
     wallet_name = sys.argv[1]
     load_program_config()
     #to allow testing of confirm/unconfirm callback for multiple txs
@@ -44,12 +46,24 @@ def main():
                 print("Failed to load wallet, error message: " + repr(e))
                 sys.exit(0)
             break
-    #grab coins ticks forward chain 1 block; must be taken into locktime account
-    jm_single().bc_interface.grab_coins(alicewallet.get_new_addr(0, 0), 2.0)
-    time.sleep(3)
+    #for testing, need funds.
+    if isinstance(jm_single().bc_interface, RegtestBitcoinCoreInterface):
+        jm_single().bc_interface.grab_coins(alicewallet.get_new_addr(0, 0), 2.0)
+        time.sleep(3)
     sync_wallet(alicewallet)
+    #if restart option selected, read state and backout
+    #(TODO is to attempt restarting normally before backing out)
+    if sys.argv[2].lower() == 'true':
+        alice = CoinSwapAlice(alicewallet, 'alicestate.json')
+        alice.bbmb = alicewallet.get_balance_by_mixdepth()
+        alice.load()
+        alice.backout("Recovering from shutdown")
+        return
+
+    #TODO create config file and set vars.
+    #for new runs, read amount parameters
     tx01_amount, tx24_recipient_amount, tx35_recipient_amount = [int(
-        x) for x in sys.argv[2:5]]
+        x) for x in sys.argv[3:6]]
     #Our destination address should be in a separate mixdepth
     tx5address = alicewallet.get_new_addr(1, 1)
     #For now let's use a simple default of 10 blocks for LOCK1 and 20 for LOCK0

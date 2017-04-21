@@ -16,7 +16,7 @@ import abc
 import sys
 from pprint import pformat
 import json
-from .base import (CoinSwapException, CoinSwapPublicParameters,
+from .base import (SIMPLECS_VERSION, CoinSwapException, CoinSwapPublicParameters,
                       CoinSwapParticipant, CoinSwapTX, CoinSwapTX01,
                       CoinSwapTX23, CoinSwapTX45, CoinSwapRedeemTX23Secret,
                       CoinSwapRedeemTX23Timeout, COINSWAP_SECRET_ENTROPY_BYTES,
@@ -88,7 +88,8 @@ class CoinSwapAlice(CoinSwapParticipant):
         this Coinswap.
         """
         self.bbmb = self.wallet.get_balance_by_mixdepth()
-        to_send = {"source_chain": "BTC",
+        to_send = {"simplecs_version": SIMPLECS_VERSION,
+                   "source_chain": "BTC",
                    "destination_chain": "BTC",
                    "amount": self.coinswap_parameters.tx0_amount}
         self.send(to_send)
@@ -332,8 +333,9 @@ class CoinSwapAlice(CoinSwapParticipant):
         self.tx4.sign_at_index(self.keyset["key_2_2_AC_0"][0], 0)
         sig = self.tx4.signatures[0][0]
         self.send(sig, self.tx5.txid)
+        self.tx4broadcast_counter = 0
         self.loop_tx4 = task.LoopingCall(self.wait_for_tx4_confirmation)
-        self.loop_tx4.start(3.0)        
+        self.loop_tx4.start(3.0)
         return (True, "TX4 signature sent.")
 
     def confirm_tx4_sig_receipt(self, result):
@@ -342,9 +344,15 @@ class CoinSwapAlice(CoinSwapParticipant):
 
     def wait_for_tx4_confirmation(self):
         """Receives notification from Carol that tx4 is seen on network;
-        we check whether we see it also, for convenience, and use it to trigger
-        finalization of run.
+        we use it to trigger finalization of run. This is only a 'courtesy',
+        since it has no effect on us, so we don't wait forever.
         """
+        self.tx4broadcast_counter += 1
+        if self.tx4broadcast_counter > 10:
+            jlog.info("Timed out waiting for Carol to confirm broadcast "
+                      "of TX4; this has no effect on us, so we give up.")
+            self.tx4_callback("None")
+            return
         self.jsonrpcclient.send_poll("confirm_tx4", self.tx4_callback)
     
     def tx4_callback(self, result):
@@ -355,12 +363,5 @@ class CoinSwapAlice(CoinSwapParticipant):
             return
         self.txid4 = result
         self.loop_tx4.stop()
-        jlog.info("Coinswap successfully completed.")
-        sync_wallet(self.wallet)
-        self.bbma = self.wallet.get_balance_by_mixdepth()
-        jlog.info("Wallet before: ")
-        jlog.info(pformat(self.bbmb))
-        jlog.info("Wallet after: ")
-        jlog.info(pformat(self.bbma))
         self.final_report()
         reactor.stop()

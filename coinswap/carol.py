@@ -19,7 +19,7 @@ import abc
 import sys
 from pprint import pformat
 import json
-from coinswap import (CoinSwapException, CoinSwapPublicParameters,
+from coinswap import (SIMPLECS_VERSION, CoinSwapException, CoinSwapPublicParameters,
                       CoinSwapParticipant, CoinSwapTX, CoinSwapTX01,
                       CoinSwapTX23, CoinSwapTX45, CoinSwapRedeemTX23Secret,
                       CoinSwapRedeemTX23Timeout, COINSWAP_SECRET_ENTROPY_BYTES,
@@ -83,6 +83,10 @@ class CoinSwapCarol(CoinSwapParticipant):
         are acceptable.
         """
         self.bbmb = self.wallet.get_balance_by_mixdepth()
+        if d["simplecs_version"] != SIMPLECS_VERSION:
+            return (False, "wrong SimpleCS version, was: " + \
+                    str(d["simplecs_version"]) + ", should be: " + \
+                    str(SIMPLECS_VERSION))
         if d["source_chain"] != self.source_chain:
             return (False, "source chain was wrong: " + d["source_chain"])
         if d["destination_chain"] != self.destination_chain:
@@ -314,12 +318,6 @@ class CoinSwapCarol(CoinSwapParticipant):
         self.tx4_loop.stop()
         self.tx4_confirmed = True
         jlog.info("Carol received: " + self.tx4.txid + ", now ending.")
-        sync_wallet(self.wallet)
-        self.bbma = self.wallet.get_balance_by_mixdepth()
-        jlog.info("Wallet before: ")
-        jlog.info(pformat(self.bbmb))
-        jlog.info("Wallet after: ")
-        jlog.info(pformat(self.bbma))
         self.final_report()
 
     def is_tx4_confirmed(self):
