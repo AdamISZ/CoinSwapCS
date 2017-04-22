@@ -97,7 +97,7 @@ def get_log():
 defaultconfig = \
     """
 [BLOCKCHAIN]
-#options: bitcoin-rpc, regtest, (no non-Bitcoin Core currently supported
+#options: bitcoin-rpc, regtest, (no non-Bitcoin Core currently supported)
 blockchain_source = bitcoin-rpc
 network = mainnet
 rpc_host = localhost
@@ -106,10 +106,25 @@ rpc_user = bitcoin
 rpc_password = password
 
 [TIMEOUT]
-#How long to wait, in seconds, before giving up on the server and executing backout.
-default_server_timeout = 60
+#How long to wait, by default, in seconds, before giving up on the counterparty
+#and executing backout. This is only applied in cases where response is intended
+#to be immediate.
+default_network_timeout = 60
 #How many blocks to wait for ensured confirmation for the first stage (funding) txs.
+#Note that the this value must be agreed with the server.
 tx01_confirm_wait = 2
+#
+#***LOCKTIMES***
+#
+#These are critical to CoinSwap's design; probably better not to change them,
+#but if you do, read the following notes and make sure you understand.
+#Locktime for TX3 (server's timeout); the server can refund her pay-in transaction
+#after this number of blocks, from the starting time
+lock_server = 10
+#Locktime for TX2 (client's timeout); the client can refund her pay-in transaction
+#after this number of blocks, from the starting time. Note that this has to be a
+#longer timeout than that for the server (generally it should be ~2xserver timeout).
+lock_client = 20
 
 [SESSIONS]
 #Location of directory where sessions are stored for recovery, it is located under
@@ -127,6 +142,7 @@ default_fee_target = 2
 #these transactions are high priority since in certain cases they may become
 #invalid after a certain amount of time (although only if the counterparty is
 #malicious).
+#Note that this and the following value must be agreed with the server.
 backout_fee_target = 1
 #Further to the above, an additional fee multiplier may be applied to give
 #extra priority (by default target=1 block is considered enough, so x1.0 here).
@@ -140,8 +156,7 @@ merge_algorithm = default
 # per kB are needed to get in one of the next N blocks, N set here
 # as the value of 'tx_fees'. This estimate can be extremely high
 # if you set N=1, so we choose N=3 for a more reasonable figure,
-# as our default. Note that for clients not using a local blockchain
-# instance, we retrieve an estimate from the API at cointape.com, currently.
+# as our default.
 tx_fees = 3
 absurd_fee_per_kb = 250000
 
@@ -205,6 +220,7 @@ def load_coinswap_config(config_path=None, bs=None):
     # configure the interface to the blockchain on startup
     global_singleton.bc_interface = get_blockchain_interface_instance(
         global_singleton.config)
+    #inject the configuration to the underlying jmclient code.
     set_config(global_singleton.config, bcint=global_singleton.bc_interface)
     
 

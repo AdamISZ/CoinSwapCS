@@ -58,11 +58,14 @@ class CoinSwapCarol(CoinSwapParticipant):
                 (self.receive_tx0_hash_tx2sig, False, -1),
                 (self.send_tx1id_tx2_sig_tx3_sig, True, -1),
                 (self.receive_tx3_sig, False, -1),
-                (self.push_tx1, False, 30), #alice waits for confirms before sending secret
+                 #alice waits for confirms before sending secret; this accounts
+                 #for propagation delays.
+                (self.push_tx1, False, 30),
                 (self.receive_secret, False, -1),
-                (self.send_tx5_sig, True, 30), #alice waits for confirms on TX5 before sending TX4 sig
+                 #alice waits for confirms on TX5 before sending TX4 sig
+                (self.send_tx5_sig, True, 30),
                 (self.receive_tx4_sig, False, -1),
-                (self.broadcast_tx4, True, -1)] #we shut down on broadcast here.
+                (self.broadcast_tx4, True, -1)]
 
     def set_handshake_parameters(self, source_chain="BTC",
                                  destination_chain="BTC",
@@ -85,6 +88,12 @@ class CoinSwapCarol(CoinSwapParticipant):
             return (False, "wrong CoinSwapCS version, was: " + \
                     str(d["coinswapcs_version"]) + ", should be: " + \
                     str(cs_single().CSCS_VERSION))
+        #Allow client to decide how long to wait, but within limits:
+        if d["tx01_confirm_wait"] < 1 or d["tx01_confirm_wait"] > cs_single(
+            ).config.getint("TIMEOUT","tx01_confirm_wait") + 2:
+            return (False, "Mismatched tx01_confirm_wait, was: " + \
+            str(d["tx01_confirm_wait"]) + ", should be >=1 and less than:" + \
+            cs_single().config.get("TIMEOUT", "tx01_confirm_wait") + 3)
         if not self.coinswap_parameters.set_session_id(d["session_id"]):
             return (False, "invalid session id proposed: " + str(d["session_id"]))
         #immediately set the state file to the correct value
@@ -113,6 +122,17 @@ class CoinSwapCarol(CoinSwapParticipant):
             self.coinswap_parameters.set_pubkey("key_2_2_CB_1", params[4])
             self.coinswap_parameters.set_pubkey("key_TX2_lock", params[5])
             self.coinswap_parameters.set_pubkey("key_TX3_secret", params[6])
+            #Client's locktimes must be in an acceptable range.
+            #Note that the tolerances here are hardcoded, probably a TODO.
+            #(Although it'll be less complicated if everybody runs with one
+            #default for the locktimes).
+            cbh = get_current_blockheight()
+            my_lock0 = cs_single().config.getint("TIMEOUT", "lock_client")
+            my_lock1 = cs_single().config.getint("TIMEOUT", "lock_server")
+            if params[7] not in range(cbh + my_lock0 - 10, cbh + my_lock0 + 11):
+                return (False, "Counterparty LOCK0 out of range")
+            if params[8] not in range(cbh + my_lock1 - 10, cbh + my_lock1 + 11):
+                return (False, "Counterparty LOCK1 out of range")
             self.coinswap_parameters.set_timeouts(params[7], params[8])
             self.coinswap_parameters.set_tx5_address(params[9])
         except:
@@ -246,7 +266,7 @@ class CoinSwapCarol(CoinSwapParticipant):
         self.loop = task.LoopingCall(self.check_for_phase1_utxos,
                                          [self.tx1.txid + ":" + str(
                                              self.tx1.pay_out_index)],
-                                         1, self.receive_confirmation_tx_0_1)
+                                         self.receive_confirmation_tx_0_1)
         self.loop.start(3.0)
         return (True, "TX1 broadcast OK")
 

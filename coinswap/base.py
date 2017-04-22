@@ -156,11 +156,12 @@ class StateMachine(object):
     """A simple state machine that has integer states,
     incremented on successful execution of corresponding callbacks.
     """
-    def __init__(self, init_state, backout, callbackdata, default_timeout=20):
+    def __init__(self, init_state, backout, callbackdata):
         self.num_states = len(callbackdata)
         self.init_state = init_state
         self.state = init_state
-        self.default_timeout = default_timeout
+        self.default_timeout = float(cs_single().config.get("TIMEOUT",
+                                                    "default_network_timeout"))
         #by default no pre- or post- processing
         self.setup = None
         self.finalize = None
@@ -1088,10 +1089,12 @@ class CoinSwapParticipant(object):
             else:
                 assert False
 
-    def check_for_phase1_utxos(self, utxos, confs=1, cb=None):
+    def check_for_phase1_utxos(self, utxos, cb=None):
         """Any participant needs to wait for completion of phase 1 through
-        seeing the utxos on the network. Pass callback for start of phase2
-        (redemption phase), must have signature callback(utxolist).
+        seeing the utxos on the network. Optionally pass callback for start
+        of phase2 (redemption phase), else default is state machine tick();
+        must have signature callback(utxolist).
+        Triggered on number of confirmations as set by config.
         This should be fired by task looptask, which is stopped on success.
         """
         result = cs_single().bc_interface.query_utxo_set(utxos,
@@ -1099,7 +1102,8 @@ class CoinSwapParticipant(object):
         if None in result:
             return
         for u in result:
-            if u['confirms'] < confs:
+            if u['confirms'] < cs_single().config.getint(
+                "TIMEOUT", "tx01_confirm_wait"):
                 return
         self.loop.stop()
         if cb:
@@ -1218,6 +1222,9 @@ class CoinSwapPublicParameters(object):
         self.tx5_amount = tx35_recipient_amount
         if timeoutdata:
             self.set_timeouts(*timeoutdata)
+        else:
+            #Client can set timeouts from config
+            self.set_timeouts(None, None)
         if addressdata:
             self.set_addr_data(*addressdata)
         if pubkeydata:
@@ -1293,6 +1300,10 @@ class CoinSwapPublicParameters(object):
             assert self.timeouts["LOCK0"] > self.timeouts["LOCK1"]
 
     def set_timeouts(self, blockheight1, blockheight2):
+        if not blockheight1:
+            cb = get_current_blockheight()
+            blockheight1 = cb + cs_single().config.getint("TIMEOUT", "lock_client")
+            blockheight2 = cb + cs_single().config.getint("TIMEOUT", "lock_server")
         assert blockheight1 > blockheight2
         self.timeouts["LOCK0"] = blockheight1
         self.timeouts["LOCK1"] = blockheight2

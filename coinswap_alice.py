@@ -64,10 +64,6 @@ def main():
         x) for x in sys.argv[3:6]]
     #Our destination address should be in a separate mixdepth
     tx5address = alicewallet.get_new_addr(1, 1)
-    #For now let's use a simple default of 10 blocks for LOCK1 and 20 for LOCK0
-    current_blockheight = get_current_blockheight()
-    lock0 = current_blockheight + 20
-    lock1 = current_blockheight + 10
     #instantiate the parameters, but don't yet have the ephemeral pubkeys
     #or destination addresses.
     cpp = CoinSwapPublicParameters(tx01_amount, tx24_recipient_amount,
@@ -75,7 +71,6 @@ def main():
     #Alice must set the unique identifier for this run.
     cpp.set_session_id()
     cpp.set_tx5_address(tx5address)
-    cpp.set_timeouts(lock0, lock1)
     alice = CoinSwapAlice(alicewallet, 'alicestate', cpp)
     alice_client = CoinSwapJSONRPCClient("127.0.0.1", "7080",
                                          alice.sm.tick, alice.backout)

@@ -65,7 +65,9 @@ class CoinSwapAlice(CoinSwapParticipant):
                 (self.send_tx3, True, -1),
                 (self.broadcast_tx0, False, -1),
                 (self.see_tx0_tx1, True, -1),
-                (self.wait_for_phase_2, False, 30), #only updates after conf
+                #only updates after confirmation; the custom delay here is to
+                #account for network propagation delays for the TX0/TX1 conf.
+                (self.wait_for_phase_2, False, 30),
                 (self.send_coinswap_secret, False, -1),
                 (self.receive_tx5_sig, False, -1),
                 (self.broadcast_tx5, True, 30), #only updates after conf
@@ -89,6 +91,8 @@ class CoinSwapAlice(CoinSwapParticipant):
         self.bbmb = self.wallet.get_balance_by_mixdepth()
         to_send = {"coinswapcs_version": cs_single().CSCS_VERSION,
                    "session_id": self.coinswap_parameters.session_id,
+                   "tx01_confirm_wait": cs_single().config.getint("TIMEOUT",
+                                                            "tx01_confirm_wait"),
                    "source_chain": "BTC",
                    "destination_chain": "BTC",
                    "amount": self.coinswap_parameters.tx0_amount}
