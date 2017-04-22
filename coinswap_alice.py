@@ -1,12 +1,11 @@
 #!/home/adam/virtualenvs/escrow/bin/python
 from __future__ import print_function
 import jmbitcoin as btc
-from jmclient import (load_program_config, jm_single, Wallet,
-                      get_p2pk_vbyte, get_p2sh_vbyte, estimate_tx_fee,
+from jmclient import Wallet, estimate_tx_fee
+from coinswap import (cs_single, CoinSwapPublicParameters, CoinSwapAlice,
+                      CoinSwapJSONRPCClient, get_current_blockheight,
                       sync_wallet, RegtestBitcoinCoreInterface,
-                      BitcoinCoreInterface, get_log)
-from coinswap import (CoinSwapPublicParameters, CoinSwapAlice,
-                      CoinSwapJSONRPCClient, get_current_blockheight)
+                      BitcoinCoreInterface, get_log, load_coinswap_config)
 
 from twisted.internet import reactor
 from twisted.python import log
@@ -15,21 +14,20 @@ import time
 import os
 import sys
 
-def shutdown_block_simulator():
-    jm_single().bc_interface.send_thread_shutdown()
+cslog = get_log()
 
 def main():
     #twisted logging (TODO disable for non-debug runs)
     log.startLogging(sys.stdout)
     #Joinmarket wallet
     wallet_name = sys.argv[1]
-    load_program_config()
+    load_coinswap_config()
     #to allow testing of confirm/unconfirm callback for multiple txs
-    if isinstance(jm_single().bc_interface, RegtestBitcoinCoreInterface):
-        jm_single().bc_interface.tick_forward_chain_interval = 2
-        jm_single().bc_interface.simulating = True
-        jm_single().config.set("BLOCKCHAIN", "notify_port", "62653")
-        jm_single().config.set("BLOCKCHAIN", "rpc_host", "127.3.0.2")
+    if isinstance(cs_single().bc_interface, RegtestBitcoinCoreInterface):
+        cs_single().bc_interface.tick_forward_chain_interval = 2
+        cs_single().bc_interface.simulating = True
+        cs_single().config.set("BLOCKCHAIN", "notify_port", "62653")
+        cs_single().config.set("BLOCKCHAIN", "rpc_host", "127.3.0.2")
     #depth 0: spend in, depth 1: receive out, depth 2: for backout transactions.
     max_mix_depth = 3
     if not os.path.exists(os.path.join('wallets', wallet_name)):
@@ -47,14 +45,14 @@ def main():
                 sys.exit(0)
             break
     #for testing, need funds.
-    if isinstance(jm_single().bc_interface, RegtestBitcoinCoreInterface):
-        jm_single().bc_interface.grab_coins(alicewallet.get_new_addr(0, 0), 2.0)
+    if isinstance(cs_single().bc_interface, RegtestBitcoinCoreInterface):
+        cs_single().bc_interface.grab_coins(alicewallet.get_new_addr(0, 0), 2.0)
         time.sleep(3)
     sync_wallet(alicewallet)
     #if restart option selected, read state and backout
     #(TODO is to attempt restarting normally before backing out)
     if sys.argv[2].lower() == 'true':
-        alice = CoinSwapAlice(alicewallet, 'alicestate.json')
+        alice = CoinSwapAlice(alicewallet, 'alicestate')
         alice.bbmb = alicewallet.get_balance_by_mixdepth()
         alice.load()
         alice.backout("Recovering from shutdown")
@@ -74,9 +72,11 @@ def main():
     #or destination addresses.
     cpp = CoinSwapPublicParameters(tx01_amount, tx24_recipient_amount,
                                    tx35_recipient_amount)
+    #Alice must set the unique identifier for this run.
+    cpp.set_session_id()
     cpp.set_tx5_address(tx5address)
     cpp.set_timeouts(lock0, lock1)
-    alice = CoinSwapAlice(alicewallet, 'alicestate.json', cpp)
+    alice = CoinSwapAlice(alicewallet, 'alicestate', cpp)
     alice_client = CoinSwapJSONRPCClient("127.0.0.1", "7080",
                                          alice.sm.tick, alice.backout)
     alice.set_jsonrpc_client(alice_client)

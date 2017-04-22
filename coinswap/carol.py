@@ -1,14 +1,12 @@
 from __future__ import print_function
 import jmbitcoin as btc
-from jmclient import (load_program_config, jm_single, Wallet,
-                      get_p2pk_vbyte, get_p2sh_vbyte, estimate_tx_fee,
-                      sync_wallet, RegtestBitcoinCoreInterface,
-                      BitcoinCoreInterface, get_log)
+from jmclient import estimate_tx_fee
 from twisted.internet import reactor, task
 from txjsonrpc.web.jsonrpc import Proxy
 from txjsonrpc.web import jsonrpc
 from twisted.web import server
 from .btscript import *
+from .configure import get_log
 import pytest
 from decimal import Decimal
 import binascii
@@ -19,15 +17,15 @@ import abc
 import sys
 from pprint import pformat
 import json
-from coinswap import (SIMPLECS_VERSION, CoinSwapException, CoinSwapPublicParameters,
+from coinswap import (CoinSwapException, CoinSwapPublicParameters,
                       CoinSwapParticipant, CoinSwapTX, CoinSwapTX01,
                       CoinSwapTX23, CoinSwapTX45, CoinSwapRedeemTX23Secret,
                       CoinSwapRedeemTX23Timeout, COINSWAP_SECRET_ENTROPY_BYTES,
                       get_coinswap_secret, get_current_blockheight,
                       create_hash_script, detect_spent, get_secret_from_vin,
-                      generate_escrow_redeem_script)
+                      generate_escrow_redeem_script, cs_single)
 
-jlog = get_log()
+cslog = get_log()
 
 class CoinSwapCarol(CoinSwapParticipant):
     """
@@ -83,10 +81,14 @@ class CoinSwapCarol(CoinSwapParticipant):
         are acceptable.
         """
         self.bbmb = self.wallet.get_balance_by_mixdepth()
-        if d["simplecs_version"] != SIMPLECS_VERSION:
-            return (False, "wrong SimpleCS version, was: " + \
-                    str(d["simplecs_version"]) + ", should be: " + \
-                    str(SIMPLECS_VERSION))
+        if d["coinswapcs_version"] != cs_single().CSCS_VERSION:
+            return (False, "wrong CoinSwapCS version, was: " + \
+                    str(d["coinswapcs_version"]) + ", should be: " + \
+                    str(cs_single().CSCS_VERSION))
+        if not self.coinswap_parameters.set_session_id(d["session_id"]):
+            return (False, "invalid session id proposed: " + str(d["session_id"]))
+        #immediately set the state file to the correct value
+        self.state_file = self.state_file + self.coinswap_parameters.session_id + '.json'
         if d["source_chain"] != self.source_chain:
             return (False, "source chain was wrong: " + d["source_chain"])
         if d["destination_chain"] != self.destination_chain:
@@ -120,9 +122,9 @@ class CoinSwapCarol(CoinSwapParticipant):
         for k in self.required_key_names:
             self.coinswap_parameters.set_pubkey(k, self.keyset[k][1])
         if not self.coinswap_parameters.is_complete():
-            jlog.debug("addresses: " + str(self.coinswap_parameters.addresses_complete))
-            jlog.debug("pubkeys: " + str(self.coinswap_parameters.pubkeys_complete))
-            jlog.debug("timeouts: " + str(self.coinswap_parameters.timeouts_complete))
+            cslog.debug("addresses: " + str(self.coinswap_parameters.addresses_complete))
+            cslog.debug("pubkeys: " + str(self.coinswap_parameters.pubkeys_complete))
+            cslog.debug("timeouts: " + str(self.coinswap_parameters.timeouts_complete))
             return (False, "Coinswap parameters is not complete")
         #first entry confirms acceptance of parameters
         to_send = [True,
@@ -178,10 +180,10 @@ class CoinSwapCarol(CoinSwapParticipant):
             x['address']) for x in self.initial_utxo_inputs.values()]
         #calculate size of change output; default p2pkh assumed
         fee = estimate_tx_fee(len(self.initial_utxo_inputs), 2)
-        jlog.debug("got tx1 fee: " + str(fee))
-        jlog.debug("for tx1 input amount: " + str(total_in))
+        cslog.debug("got tx1 fee: " + str(fee))
+        cslog.debug("for tx1 input amount: " + str(total_in))
         change_amount = total_in - self.coinswap_parameters.tx1_amount - fee
-        jlog.debug("got tx1 change amount: " + str(change_amount))
+        cslog.debug("got tx1 change amount: " + str(change_amount))
         #get a change address in same mixdepth
         change_address = self.wallet.get_internal_addr(0)
         self.tx1 = CoinSwapTX01.from_params(
@@ -197,8 +199,8 @@ class CoinSwapCarol(CoinSwapParticipant):
         self.tx1.signall(self.signing_privkeys)
         self.tx1.attach_signatures()
         self.tx1.set_txid()
-        jlog.info("Carol created and signed TX1:")
-        jlog.info(self.tx1)
+        cslog.info("Carol created and signed TX1:")
+        cslog.info(self.tx1)
         #**CONSTRUCT TX3**
         utxo_in = self.tx1.txid + ":"+str(self.tx1.pay_out_index)
         self.tx3 = CoinSwapTX23.from_params(
@@ -214,8 +216,8 @@ class CoinSwapCarol(CoinSwapParticipant):
         #create our signature on TX3
         self.tx3.sign_at_index(self.keyset["key_2_2_CB_0"][0], 0)
         our_tx3_sig = self.tx3.signatures[0][0]
-        jlog.info("Carol now has partially signed TX3:")
-        jlog.info(self.tx3)
+        cslog.info("Carol now has partially signed TX3:")
+        cslog.info(self.tx3)
         return ([self.tx1.txid + ":" + str(self.tx1.pay_out_index),
                 our_tx2_sig, our_tx3_sig], "OK")
 
@@ -225,8 +227,8 @@ class CoinSwapCarol(CoinSwapParticipant):
         """
         if not self.tx3.include_signature(1, sig):
             return (False, "TX3 signature received is invalid")
-        jlog.info("Carol now has fully signed TX3:")
-        jlog.info(self.tx3)
+        cslog.info("Carol now has fully signed TX3:")
+        cslog.info(self.tx3)
         self.tx3.attach_signatures()
         self.watch_for_tx(self.tx3)
         #wait until TX0 is seen before pushing ours.
@@ -308,7 +310,7 @@ class CoinSwapCarol(CoinSwapParticipant):
         return (True, "OK")
 
     def wait_for_tx4_confirmed(self):
-        result = jm_single().bc_interface.query_utxo_set([self.tx4.txid+":0"],
+        result = cs_single().bc_interface.query_utxo_set([self.tx4.txid+":0"],
                                                          includeconf=True)
         if None in result:
             return
@@ -317,7 +319,7 @@ class CoinSwapCarol(CoinSwapParticipant):
                 return
         self.tx4_loop.stop()
         self.tx4_confirmed = True
-        jlog.info("Carol received: " + self.tx4.txid + ", now ending.")
+        cslog.info("Carol received: " + self.tx4.txid + ", now ending.")
         self.final_report()
 
     def is_tx4_confirmed(self):
@@ -341,7 +343,7 @@ class CoinSwapCarol(CoinSwapParticipant):
         vins = deser_spending_tx['ins']
         self.secret = get_secret_from_vin(vins, self.hashed_secret)
         if not self.secret:
-            jlog.info("Critical error; TX3 spent but no "
+            cslog.info("Critical error; TX3 spent but no "
                       "coinswap secret was found.")
             return False
         return self.secret
@@ -361,17 +363,17 @@ class CoinSwapCarol(CoinSwapParticipant):
             self.coinswap_parameters.tx5_amount,
             self.coinswap_parameters.tx5_address)
         self.tx3redeem.sign_at_index(self.keyset["key_TX3_lock"][0], 0)
-        wallet_name = jm_single().bc_interface.get_wallet_name(self.wallet)
+        wallet_name = cs_single().bc_interface.get_wallet_name(self.wallet)
         self.import_address(self.tx3redeem.output_address)
         msg, success = self.tx3redeem.push()
-        jlog.info("Redeem tx: ")
-        jlog.info(self.tx3redeem)
+        cslog.info("Redeem tx: ")
+        cslog.info(self.tx3redeem)
         if not success:
-            jlog.info("RPC error message: " + msg)
-            jlog.info("Failed to broadcast TX3 redeem; here is raw form: ")
-            jlog.info(self.tx3redeem.fully_signed_tx)
-            jlog.info("Readable form: ")
-            jlog.info(self.tx3redeem)
+            cslog.info("RPC error message: " + msg)
+            cslog.info("Failed to broadcast TX3 redeem; here is raw form: ")
+            cslog.info(self.tx3redeem.fully_signed_tx)
+            cslog.info("Readable form: ")
+            cslog.info(self.tx3redeem)
             return False
         return True
 
@@ -379,9 +381,9 @@ class CoinSwapCarol(CoinSwapParticipant):
         #Broadcast TX3
         msg, success = self.tx2.push()
         if not success:
-            jlog.info("RPC error message: " + msg)
-            jlog.info("Failed to broadcast TX2; here is raw form: ")
-            jlog.info(self.tx2.fully_signed_tx)
+            cslog.info("RPC error message: " + msg)
+            cslog.info("Failed to broadcast TX2; here is raw form: ")
+            cslog.info(self.tx2.fully_signed_tx)
             return
         #**CONSTRUCT TX2-redeem-secret; note tx*5* address is used.
         tx2redeem_secret = CoinSwapRedeemTX23Secret(self.secret,
@@ -392,18 +394,18 @@ class CoinSwapCarol(CoinSwapParticipant):
                         self.coinswap_parameters.tx4_amount,
                         self.coinswap_parameters.tx4_address)
         tx2redeem_secret.sign_at_index(self.keyset["key_TX2_secret"][0], 0)
-        wallet_name = jm_single().bc_interface.get_wallet_name(self.wallet)
+        wallet_name = cs_single().bc_interface.get_wallet_name(self.wallet)
         self.import_address(tx2redeem_secret.output_address)
         msg, success = tx2redeem_secret.push()
-        jlog.info("Redeem tx: ")
-        jlog.info(tx2redeem_secret)
+        cslog.info("Redeem tx: ")
+        cslog.info(tx2redeem_secret)
         if not success:
-            jlog.info("RPC error message: " + msg)
-            jlog.info("Failed to broadcast TX2 redeem; here is raw form: ")
-            jlog.info(tx2redeem_secret.fully_signed_tx)
-            jlog.info(tx2redeem_secret)
+            cslog.info("RPC error message: " + msg)
+            cslog.info("Failed to broadcast TX2 redeem; here is raw form: ")
+            cslog.info(tx2redeem_secret.fully_signed_tx)
+            cslog.info(tx2redeem_secret)
         else:
-            jlog.info("Successfully redeemed funds via TX2, to address: "+\
+            cslog.info("Successfully redeemed funds via TX2, to address: "+\
                       self.coinswap_parameters.tx4_address + ", in txid: " +\
                       tx2redeem_secret.txid)
 
@@ -414,15 +416,15 @@ class CoinSwapCarol(CoinSwapParticipant):
         assert self.sm.state in [6, 7, 8]
         if self.tx3redeem.is_confirmed:
             self.carol_watcher_loop.stop()
-            jlog.info("Redeemed funds via TX3 OK, txid of redeeming transaction "
+            cslog.info("Redeemed funds via TX3 OK, txid of redeeming transaction "
                       "is: " + self.tx3redeem.txid)
             return
         if self.tx3.is_spent:
             if btc.txhash(self.tx3.spending_tx) != redeeming_txid:
-                jlog.info("Detected TX3 spent by other party; backing out to TX2")
+                cslog.info("Detected TX3 spent by other party; backing out to TX2")
                 retval = self.find_secret_from_tx3_redeem()
                 if not retval:
-                    jlog.info("CRITICAL ERROR: Failed to find secret from TX3 redeem.")
+                    cslog.info("CRITICAL ERROR: Failed to find secret from TX3 redeem.")
                     reactor.stop()
                     return
                 self.redeem_tx2_with_secret()

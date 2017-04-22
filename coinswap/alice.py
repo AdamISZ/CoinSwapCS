@@ -1,11 +1,9 @@
 from __future__ import print_function
 import jmbitcoin as btc
-from jmclient import (load_program_config, jm_single, Wallet,
-                      get_p2pk_vbyte, get_p2sh_vbyte, estimate_tx_fee,
-                      sync_wallet, RegtestBitcoinCoreInterface,
-                      BitcoinCoreInterface, get_log)
+from jmclient import estimate_tx_fee
 from twisted.internet import reactor, task
 from .btscript import *
+from .configure import get_log
 import pytest
 from decimal import Decimal
 import binascii
@@ -16,15 +14,16 @@ import abc
 import sys
 from pprint import pformat
 import json
-from .base import (SIMPLECS_VERSION, CoinSwapException, CoinSwapPublicParameters,
+from .base import (CoinSwapException, CoinSwapPublicParameters,
                       CoinSwapParticipant, CoinSwapTX, CoinSwapTX01,
                       CoinSwapTX23, CoinSwapTX45, CoinSwapRedeemTX23Secret,
                       CoinSwapRedeemTX23Timeout, COINSWAP_SECRET_ENTROPY_BYTES,
                       get_coinswap_secret, get_current_blockheight,
                       create_hash_script, detect_spent, get_secret_from_vin,
                       generate_escrow_redeem_script)
+from coinswap import cs_single
 
-jlog = get_log()
+cslog = get_log()
 
 class CoinSwapAlice(CoinSwapParticipant):
     """
@@ -88,7 +87,8 @@ class CoinSwapAlice(CoinSwapParticipant):
         this Coinswap.
         """
         self.bbmb = self.wallet.get_balance_by_mixdepth()
-        to_send = {"simplecs_version": SIMPLECS_VERSION,
+        to_send = {"coinswapcs_version": cs_single().CSCS_VERSION,
+                   "session_id": self.coinswap_parameters.session_id,
                    "source_chain": "BTC",
                    "destination_chain": "BTC",
                    "amount": self.coinswap_parameters.tx0_amount}
@@ -118,7 +118,7 @@ class CoinSwapAlice(CoinSwapParticipant):
     def complete_negotiation(self, carol_response):
         """Receive Carol's coinswap parameters.
         """
-        jlog.debug('Carol response for param negotiation: ' + str(carol_response))
+        cslog.debug('Carol response for param negotiation: ' + str(carol_response))
         if not carol_response[0]:
             return (False, "Negative response from Carol in negotiation")
         #on receipt of valid response, complete the CoinswapPublicParameters instance
@@ -158,10 +158,10 @@ class CoinSwapAlice(CoinSwapParticipant):
             x['address']) for x in self.initial_utxo_inputs.values()]
         #calculate size of change output; default p2pkh assumed
         fee = estimate_tx_fee(len(self.initial_utxo_inputs), 2)
-        jlog.debug("got tx0 fee: " + str(fee))
-        jlog.debug("for tx0 input amount: " + str(total_in))
+        cslog.debug("got tx0 fee: " + str(fee))
+        cslog.debug("for tx0 input amount: " + str(total_in))
         change_amount = total_in - self.coinswap_parameters.tx0_amount - fee
-        jlog.debug("got tx0 change amount: " + str(change_amount))
+        cslog.debug("got tx0 change amount: " + str(change_amount))
         #get a change address in same mixdepth
         change_address = self.wallet.get_internal_addr(0)
         self.tx0 = CoinSwapTX01.from_params(self.coinswap_parameters.pubkeys["key_2_2_AC_0"],
@@ -176,8 +176,8 @@ class CoinSwapAlice(CoinSwapParticipant):
         self.tx0.signall(self.signing_privkeys)
         self.tx0.attach_signatures()
         self.tx0.set_txid()
-        jlog.info("Alice created and signed TX0:")
-        jlog.info(self.tx0)
+        cslog.info("Alice created and signed TX0:")
+        cslog.info(self.tx0)
         #**CONSTRUCT TX2**
         #Input is outpoint from TX0
         utxo_in = self.tx0.txid + ":"+str(self.tx0.pay_out_index)
@@ -207,8 +207,8 @@ class CoinSwapAlice(CoinSwapParticipant):
         self.txid1 = txid1
         if not self.tx2.include_signature(1, sigtx2):
             return (False, "Counterparty signature for TX2 invalid.")
-        jlog.info("Alice now has completely signed TX2:")
-        jlog.info(self.tx2)
+        cslog.info("Alice now has completely signed TX2:")
+        cslog.info(self.tx2)
         #TX2 must now be watched for updates
         self.tx2.attach_signatures()
         self.watch_for_tx(self.tx2)
@@ -310,7 +310,7 @@ class CoinSwapAlice(CoinSwapParticipant):
     def wait_for_tx5_confirmation(self, confs=1):
         """Looping task to wait for TX5 on network before TX4.
         """
-        result = jm_single().bc_interface.query_utxo_set([self.tx5.txid+":0"],
+        result = cs_single().bc_interface.query_utxo_set([self.tx5.txid+":0"],
                                                          includeconf=True)
         if None in result:
             return
@@ -339,7 +339,7 @@ class CoinSwapAlice(CoinSwapParticipant):
         return (True, "TX4 signature sent.")
 
     def confirm_tx4_sig_receipt(self, result):
-        jlog.info("Got this response from Carol to our TX4 sig: " + str(result))
+        cslog.info("Got this response from Carol to our TX4 sig: " + str(result))
         return (result, "Carol received TX4 sig OK.")
 
     def wait_for_tx4_confirmation(self):
@@ -349,7 +349,7 @@ class CoinSwapAlice(CoinSwapParticipant):
         """
         self.tx4broadcast_counter += 1
         if self.tx4broadcast_counter > 10:
-            jlog.info("Timed out waiting for Carol to confirm broadcast "
+            cslog.info("Timed out waiting for Carol to confirm broadcast "
                       "of TX4; this has no effect on us, so we give up.")
             self.tx4_callback("None")
             return

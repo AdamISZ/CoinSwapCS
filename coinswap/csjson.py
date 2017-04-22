@@ -4,10 +4,10 @@ from twisted.web import server
 from twisted.internet import reactor
 from .alice import CoinSwapAlice
 from .carol import CoinSwapCarol
-from jmclient import get_log
+from .configure import get_log
 from twisted.internet import defer  
 
-jlog = get_log()
+cslog = get_log()
 
 class CoinSwapJSONRPCClient(object):
     """A class encapsulating Alice's json rpc client.

@@ -1,15 +1,13 @@
 from __future__ import print_function
 import jmbitcoin as btc
-from jmclient import (load_program_config, jm_single, Wallet,
-                      get_p2pk_vbyte, get_p2sh_vbyte, estimate_tx_fee,
-                      sync_wallet, RegtestBitcoinCoreInterface,
-                      BitcoinCoreInterface, get_log)
+from jmclient import (Wallet, get_p2pk_vbyte, get_p2sh_vbyte, estimate_tx_fee)
 from twisted.internet import reactor, task
 from txjsonrpc.web.jsonrpc import Proxy
 from txjsonrpc.web import jsonrpc
 from twisted.web import server
 import BaseHTTPServer
 from .btscript import *
+from .configure import get_log, cs_single
 import pytest
 from decimal import Decimal
 import binascii
@@ -25,9 +23,9 @@ import inspect
 #from .carol import CoinSwapCarol
 
 COINSWAP_SECRET_ENTROPY_BYTES = 14
-SIMPLECS_VERSION = 0.1
+CSCS_VERSION = 0.1
 
-jlog = get_log()
+cslog = get_log()
 
 def _byteify(data, ignore_dicts = False):
     # if this is a unicode string, return its string representation
@@ -50,7 +48,7 @@ def get_current_blockheight():
     """returns current blockheight as integer.
     Assumes existence of valid Core blockchain interface instance.
     """
-    blockchainInfo = jm_single().bc_interface.jsonRpc.call("getblockchaininfo", [])
+    blockchainInfo = cs_single().bc_interface.jsonRpc.call("getblockchaininfo", [])
     return blockchainInfo["blocks"]
 
 def int_to_tx_ser(x):
@@ -78,7 +76,7 @@ def detect_spent(txid, n, unconf=False):
     #the transaction *containing* the utxo/outpoint must be at least seen.
     #Otherwise, default 1, 9999999 requires it to be confirmed.
     first = 0 if unconf else 1
-    unspent_list = jm_single().bc_interface.rpc('listunspent', [first, 9999999])
+    unspent_list = cs_single().bc_interface.rpc('listunspent', [first, 9999999])
     filtered = [u for u in unspent_list if (u['txid'] == txid and u['vout'] == n)]
     return True if len(filtered) == 0 else False
 
@@ -118,12 +116,12 @@ def get_secret_from_vin(vins, hashed_secret):
             continue
         candidate_secret = get_coinswap_secret(raw_secret=ss_deserialized[1])
         if candidate_secret[1] == hashed_secret:
-            jlog.info("Found secret on blockchain: ", candidate_secret)
+            cslog.info("Found secret on blockchain: ", candidate_secret)
             return candidate_secret[0]
         else:
-            jlog.info("Candidate vin had entry of right length, but wrong secret.")
-            jlog.info("Vin: ", vin)
-    jlog.info("Found no secret in the spending transaction")
+            cslog.info("Candidate vin had entry of right length, but wrong secret.")
+            cslog.info("Vin: ", vin)
+    cslog.info("Found no secret in the spending transaction")
     return None
         
 def create_hash_script(redeemer_pubkey, hashes):
@@ -192,7 +190,7 @@ class StateMachine(object):
         requested_callback = args[0]
         args = args[1:]
         if requested_callback != self.callbacks[self.state].__name__:
-            jlog.info('invalid callback name: ' + str(requested_callback))
+            cslog.info('invalid callback name: ' + str(requested_callback))
             return False
         if self.setup:
             self.setup()
@@ -201,14 +199,14 @@ class StateMachine(object):
         else:
             retval, msg = self.execute_callback(*args)
         if not retval:
-            jlog.info("Execution failed at step after: " + str(self.state) + \
+            cslog.info("Execution failed at step after: " + str(self.state) + \
                   ", backing out.")
             reactor.callLater(0, self.backout_callback, msg)
             return False
         if self.finalize:
             if self.state > 2:
                 self.finalize()
-        jlog.info("State: " + str(self.state -1) + " finished OK.")
+        cslog.info("State: " + str(self.state -1) + " finished OK.")
         #create a monitor call that's woken up after timeout; if we didn't
         #update, something is wrong, so backout
         if self.state < len(self.callbacks):
@@ -227,9 +225,9 @@ class StateMachine(object):
         the caller to execute backout conditional on state.
         """
         if self.state == len(self.callbacks):
-            jlog.info("State machine has completed.")
+            cslog.info("State machine has completed.")
             return
-        jlog.info('starting tick function, state is: ' + str(self.state))
+        cslog.info('starting tick function, state is: ' + str(self.state))
         if self.setup:
             self.setup()
         if not args:
@@ -237,15 +235,15 @@ class StateMachine(object):
         else:
             retval, msg = self.execute_callback(*args)
         if not retval:
-            jlog.info("Execution failed at step after: " + str(self.state) + \
+            cslog.info("Execution failed at step after: " + str(self.state) + \
                   ", backing out.")
-            jlog.info("Error message: " + msg)
+            cslog.info("Error message: " + msg)
             reactor.callLater(0, self.backout_callback, msg)
             return False
         if self.finalize:
             if self.state > 2:
                 self.finalize()
-        jlog.info("State: " + str(self.state -1) + " finished OK.")
+        cslog.info("State: " + str(self.state -1) + " finished OK.")
         #create a monitor call that's woken up after timeout; if we didn't
         #update, something is wrong, so backout
         if self.state < len(self.callbacks):
@@ -263,7 +261,7 @@ class StateMachine(object):
         except Exception as e:
             errormsg = "Failure to execute step after: " + str(self.state)
             errormsg += ", Exception: " + repr(e)
-            jlog.info(errormsg)
+            cslog.info(errormsg)
             return (False, errormsg)
         if not retval:
             return (False, msg)
@@ -370,16 +368,16 @@ class CoinSwapTX(object):
         the blockchain interface confirms arrival in mempool.
         Note this can occur due to other counterparty, not ourselves.
         """
-        jlog.info("Triggered unconfirm update for txid: " + txid)
+        cslog.info("Triggered unconfirm update for txid: " + txid)
 
         if self.txid:
             if not txid == self.txid:
-                jlog.info("WARNING: malleation detected.")
+                cslog.info("WARNING: malleation detected.")
         self.is_broadcast = True
 
     def spent_update(self, txd, txid):
         self.is_spent = True
-        jlog.info('found spending transaction: ' + str(txd))
+        cslog.info('found spending transaction: ' + str(txd))
         self.spending_tx = btc.serialize(txd)
 
     def confirm_update(self, txd, txid, confs):
@@ -387,7 +385,7 @@ class CoinSwapTX(object):
         """
         if self.txid:
             if not txid == self.txid:
-                jlog.info("WARNING: malleation detected.")
+                cslog.info("WARNING: malleation detected.")
         self.is_confirmed = True
 
     def signature_form(self, index):
@@ -443,7 +441,7 @@ class CoinSwapTX(object):
         assert self.fully_signed()
         self.attach_signatures()
         self.set_txid()
-        if not jm_single().bc_interface.pushtx(self.fully_signed_tx):
+        if not cs_single().bc_interface.pushtx(self.fully_signed_tx):
             return ("Failed to push transaction, id: " + self.txid, False)
         else:
             return (self.txid, True)
@@ -480,7 +478,7 @@ class CoinSwapTX(object):
                 setattr(self, v, d[v])
             return True
         except:
-            jlog.info("Failed to deserialize Coinswap TX object")
+            cslog.info("Failed to deserialize Coinswap TX object")
             return False
 
 class CoinSwapTX01(CoinSwapTX):
@@ -554,7 +552,7 @@ class CoinSwapSpend2_2(CoinSwapTX):
         if not btc.verify_tx_input(self.base_form, 0,
                                    self.signing_redeem_scripts[0], sig,
                                    self.signing_pubkeys[0][key_index]):
-            jlog.info("Error in include_signature: signature invalid: " + sig)
+            cslog.info("Error in include_signature: signature invalid: " + sig)
             return False
         else:
             self.signatures[0][key_index] = sig
@@ -742,7 +740,11 @@ class CoinSwapParticipant(object):
             assert isinstance(self.coinswap_parameters, CoinSwapPublicParameters)
         self.generate_keys()
         assert isinstance(wallet, Wallet)
-        self.state_file = state_file
+        if self.coinswap_parameters.session_id:
+            self.state_file = state_file + self.coinswap_parameters.session_id + '.json'
+        else:
+            #Note this MUST be updated immediately on handshake.
+            self.state_file = state_file
         self.wallet = wallet
         self.state = 0
         self.tx0 = None
@@ -765,14 +767,14 @@ class CoinSwapParticipant(object):
         """To support checking transactions, import
         backout addresses to local wallet.
         """
-        wallet_name = jm_single().bc_interface.get_wallet_name(self.wallet)
-        jm_single().bc_interface.add_watchonly_addresses([address], wallet_name)
+        wallet_name = cs_single().bc_interface.get_wallet_name(self.wallet)
+        cs_single().bc_interface.add_watchonly_addresses([address], wallet_name)
 
     def watch_for_tx(self, tx):
         """Use the blockchain interface to update
         state when a transaction is broadcast and confirmed
         """
-        jm_single().bc_interface.add_tx_notify(
+        cs_single().bc_interface.add_tx_notify(
         btc.deserialize(tx.fully_signed_tx),
         tx.unconfirm_update,
         tx.confirm_update,
@@ -789,7 +791,9 @@ class CoinSwapParticipant(object):
         self.load()
 
     def load(self):
-        with open(self.state_file, "rb") as f:
+        sess_loc = os.path.join(cs_single().homedir,
+                            cs_single().config.get("SESSIONS", "sessions_dir"))
+        with open(os.path.join(sess_loc, self.state_file), "rb") as f:
             loaded_state = json.loads(f.read(), object_hook=_byteify)
         self.coinswap_parameters = CoinSwapPublicParameters()
         self.coinswap_parameters.deserialize(loaded_state['public_parameters'])
@@ -826,7 +830,8 @@ class CoinSwapParticipant(object):
         coinswap secret and or hash,
         and current state machine state (self.state).
         Additional information is realistically required however:
-        transaction data for any transactions that are already broadcast.
+        transaction data for any transactions that are already prepared or
+        broadcast.
         """
         persisted_state = {}
         persisted_state['public_parameters'] = self.coinswap_parameters.serialize()
@@ -843,7 +848,11 @@ class CoinSwapParticipant(object):
             if not tx:
                 continue
             persisted_state[k] = tx.serialize()
-        with open(self.state_file, "wb") as f:
+        sess_loc = os.path.join(cs_single().homedir,
+                            cs_single().config.get("SESSIONS", "sessions_dir"))
+        if not os.path.exists(sess_loc):
+            os.makedirs(sess_loc)
+        with open(os.path.join(sess_loc, self.state_file), "wb") as f:
             f.write(json.dumps(persisted_state, indent=4))
  
     def backout(self, backoutmsg):
@@ -861,11 +870,11 @@ class CoinSwapParticipant(object):
             self.final_report(complete=complete, failed=failed)
             reactor.stop()
 
-        jlog.info('BACKOUT: ' + backoutmsg)
-        jlog.info("Current state: " + str(self.sm.state))
+        cslog.info('BACKOUT: ' + backoutmsg)
+        cslog.info("Current state: " + str(self.sm.state))
         if self.sm.state == 0:
             #Failure in negotiation; nothing to do
-            jlog.info("Failure in parameter negotiation; no action required; "
+            cslog.info("Failure in parameter negotiation; no action required; "
                      "ending.")
             reactor.stop()
             return
@@ -874,7 +883,7 @@ class CoinSwapParticipant(object):
             #Alice/Carol created TX0/1 but didn't broadcast; no action required.
             #Alice/Carol may have sent signatures on spend-out transactions
             #but this is irrelevant as long as TX0/1 is not on the network.
-            jlog.info("No funds have moved; no action required; ending.")
+            cslog.info("No funds have moved; no action required; ending.")
             reactor.stop()
             return
         #Handling for later states depends on Alice/Carol
@@ -885,16 +894,16 @@ class CoinSwapParticipant(object):
                 #redeem on the lock branch.
                 bh = get_current_blockheight()
                 if bh < self.coinswap_parameters.timeouts["LOCK0"] + 1:
-                    jlog.info("Not ready to redeem the funds, "
+                    cslog.info("Not ready to redeem the funds, "
                              "waiting for block: " + str(
                                  self.coinswap_parameters.timeouts["LOCK0"]))
                     reactor.callLater(3.0, self.backout, backoutmsg)
                     return
                 msg, success = self.tx2.push()
                 if not success:
-                    jlog.info("RPC error message: " + msg)
-                    jlog.info("Failed to broadcast TX2; here is raw form: ")
-                    jlog.info(self.tx2.fully_signed_tx)
+                    cslog.info("RPC error message: " + msg)
+                    cslog.info("Failed to broadcast TX2; here is raw form: ")
+                    cslog.info(self.tx2.fully_signed_tx)
                     return quit(False, True)
                 tx23_redeem = CoinSwapRedeemTX23Timeout(
                     self.coinswap_parameters.pubkeys["key_TX2_secret"],
@@ -907,11 +916,11 @@ class CoinSwapParticipant(object):
                 tx23_redeem.sign_at_index(self.keyset["key_TX2_lock"][0], 0)
                 msg, success = tx23_redeem.push()
                 if not success:
-                    jlog.info("RPC error message: ", msg)
-                    jlog.info("Failed to broadcast TX2 redeem; here is raw form: ")
-                    jlog.info(tx23_redeem.fully_signed_tx)
+                    cslog.info("RPC error message: ", msg)
+                    cslog.info("Failed to broadcast TX2 redeem; here is raw form: ")
+                    cslog.info(tx23_redeem.fully_signed_tx)
                 else:
-                    jlog.info("Successfully reclaimed funds via TX2, to address: " +\
+                    cslog.info("Successfully reclaimed funds via TX2, to address: " +\
                               self.coinswap_parameters.tx5_address)
                 return quit(False, not success)
             elif self.sm.state == 10:
@@ -919,9 +928,9 @@ class CoinSwapParticipant(object):
                 #Immediately (before L1), broadcast TX3 with the secret.
                 msg, success = self.tx3.push()
                 if not success:
-                    jlog.info("RPC error message: ", msg)
-                    jlog.info("Failed to broadcast TX3; here is raw form: ")
-                    jlog.info(self.tx3.fully_signed_tx)
+                    cslog.info("RPC error message: ", msg)
+                    cslog.info("Failed to broadcast TX3; here is raw form: ")
+                    cslog.info(self.tx3.fully_signed_tx)
                     return quit(False, True)
                 tx23_secret = CoinSwapRedeemTX23Secret(self.secret,
                             self.coinswap_parameters.pubkeys["key_TX3_secret"],
@@ -931,38 +940,42 @@ class CoinSwapParticipant(object):
                             self.coinswap_parameters.tx5_amount,
                             self.coinswap_parameters.tx5_address)
                 tx23_secret.sign_at_index(self.keyset["key_TX3_secret"][0], 0)
-                jlog.info("Broadcasting TX3 redeem: ")
+                cslog.info("Broadcasting TX3 redeem: ")
                 msg, success = tx23_secret.push()
-                jlog.info(tx23_secret)
+                cslog.info(tx23_secret)
                 if not success:
-                    jlog.info("RPC error message: ", msg)
-                    jlog.info("Failed to broadcast TX3 redeem; here is raw form: ")
-                    jlog.info(tx23_secret.fully_signed_tx)
+                    cslog.info("RPC error message: ", msg)
+                    cslog.info("Failed to broadcast TX3 redeem; here is raw form: ")
+                    cslog.info(tx23_secret.fully_signed_tx)
                 else:
-                    jlog.info("Successfully reclaimed funds via TX3, to address: " +\
+                    cslog.info("Successfully reclaimed funds via TX3, to address: " +\
                               self.coinswap_parameters.tx5_address)
                 return quit(False, not success)
             elif self.sm.state in [11, 12, 13]:
                 #We are now in possession of a valid TX5 signature; either we
                 #already broadcast it, or we do so now.
                 if self.tx5.txid:
-                    jlog.info("TX5 was already broadcast: " + self.tx5.txid)
-                    jlog.info("Here is the raw form for re-broadcast: ")
-                    jlog.info(self.tx5.fully_signed_tx)
+                    cslog.info("TX5 was already broadcast: " + self.tx5.txid)
+                    cslog.info("Here is the raw form for re-broadcast: ")
+                    cslog.info(self.tx5.fully_signed_tx)
                 else:
                     self.tx5.sign_at_index(self.keyset["key_2_2_CB_1"][0], 1)
                     errmsg, success = self.tx5.push()
                     if not success:
-                        jlog.info("Failed to push TX5, errmsg: " + errmsg)
-                        jlog.info("Raw form: ")
-                        jlog.info(self.tx5.fully_signed_tx)
-                        jlog.info("Readable form: ")
-                        jlog.info(self.tx5)
+                        cslog.info("Failed to push TX5, errmsg: " + errmsg)
+                        cslog.info("Raw form: ")
+                        cslog.info(self.tx5.fully_signed_tx)
+                        cslog.info("Readable form: ")
+                        cslog.info(self.tx5)
                     else:
-                        jlog.info("Successfully broadcast TX5, amount: " + \
+                        cslog.info("Successfully broadcast TX5, amount: " + \
                                   str(self.tx5.output_amount) + \
                                   " to address: " + self.tx5.output_address)
                 return quit(True, False)
+            elif self.sm.state == 14:
+                #occasionally errors on polling for confirm TX4 if other
+                #side is shut down; nothing needs to be done.
+                return
             else:
                 assert False
         elif isinstance(self, CoinSwapCarol):
@@ -993,38 +1006,38 @@ class CoinSwapParticipant(object):
                 #LOCK0.
                 bh = get_current_blockheight()
                 if bh < self.coinswap_parameters.timeouts["LOCK1"] + 1:
-                    jlog.info("Not ready to redeem the funds, "
+                    cslog.info("Not ready to redeem the funds, "
                              "waiting for block: " + str(
                                  self.coinswap_parameters.timeouts["LOCK1"]) + \
                              ", current block: " + str(bh))
                     reactor.callLater(3.0, self.backout, backoutmsg)
                     return
                 if bh > self.coinswap_parameters.timeouts["LOCK0"]:
-                    jlog.info("CRITICAL WARNING: Too late, counterparty may "
+                    cslog.info("CRITICAL WARNING: Too late, counterparty may "
                              "be able to double spend our redemption; attempting "
                              "to claim funds anyway. Continuing...")
                 #Broadcast TX3
-                jlog.info("Monitor records is_spent: " + str(self.tx3.is_spent))
-                jlog.info("Monitor records is_broadcast: " + str(self.tx3.is_broadcast))
-                jlog.info("Monitor records is_confirmed: " + str(self.tx3.is_confirmed))
+                cslog.info("Monitor records is_spent: " + str(self.tx3.is_spent))
+                cslog.info("Monitor records is_broadcast: " + str(self.tx3.is_broadcast))
+                cslog.info("Monitor records is_confirmed: " + str(self.tx3.is_confirmed))
                 if not self.tx3.is_broadcast:
                     msg, success = self.tx3.push()
                     if not success:
-                        jlog.info("Failed to broadcast TX3, "
+                        cslog.info("Failed to broadcast TX3, "
                                   "RPC error message: " + msg)
-                        jlog.info("Failed to broadcast TX3; here is raw form: ")
-                        jlog.info(self.tx3.fully_signed_tx)
-                        jlog.info("Readable form: ")
-                        jlog.info(self.tx3)
+                        cslog.info("Failed to broadcast TX3; here is raw form: ")
+                        cslog.info(self.tx3.fully_signed_tx)
+                        cslog.info("Readable form: ")
+                        cslog.info(self.tx3)
                         return quit(False, True)
                 if self.tx3.is_spent:
-                    jlog.info("Detected TX3 already spent by Alice. "
+                    cslog.info("Detected TX3 already spent by Alice. "
                               "Extracting secret and then redeeming TX2.")
                     #find out if tx3:0 is unspent; if so, we can attempt to
                     #spend it, if not we  must extract the secret.
                     secret = self.find_secret_from_tx3_redeem()
                     if not secret:
-                        jlog.info("CRITICAL ERROR: Failed to retrieve secret "
+                        cslog.info("CRITICAL ERROR: Failed to retrieve secret "
                                   "from TX3 broadcast by Alice.")
                         return quit(False, True)
                     self.redeem_tx2_with_secret()
@@ -1055,21 +1068,21 @@ class CoinSwapParticipant(object):
                 #We are now in possession of a valid TX4 signature; either we
                 #already broadcast it, or we do so now.
                 if self.tx4.txid:
-                    jlog.info("TX4 was already broadcast: " + self.tx4.txid)
-                    jlog.info("Here is the raw form for re-broadcast: ")
-                    jlog.info(self.tx4.fully_signed_tx)
+                    cslog.info("TX4 was already broadcast: " + self.tx4.txid)
+                    cslog.info("Here is the raw form for re-broadcast: ")
+                    cslog.info(self.tx4.fully_signed_tx)
                     return quit(True, False)
                 else:
                     self.tx4.sign_at_index(self.keyset["key_2_2_AC_1"][0], 1)
                     errmsg, success = self.tx4.push()
                     if not success:
-                        jlog.info("Failed to push TX4, errmsg: " + errmsg)
-                        jlog.info("Raw form: ")
-                        jlog.info(self.tx4.fully_signed_tx)
-                        jlog.info("Readable form: ")
-                        jlog.info(self.tx4)
+                        cslog.info("Failed to push TX4, errmsg: " + errmsg)
+                        cslog.info("Raw form: ")
+                        cslog.info(self.tx4.fully_signed_tx)
+                        cslog.info("Readable form: ")
+                        cslog.info(self.tx4)
                     else:
-                        jlog.info("Successfully pushed TX4: " + self.tx4.txid + \
+                        cslog.info("Successfully pushed TX4: " + self.tx4.txid + \
                                   ", funds claimed OK, shutting down.")
                     return quit(False, not success)
             else:
@@ -1081,7 +1094,7 @@ class CoinSwapParticipant(object):
         (redemption phase), must have signature callback(utxolist).
         This should be fired by task looptask, which is stopped on success.
         """
-        result = jm_single().bc_interface.query_utxo_set(utxos,
+        result = cs_single().bc_interface.query_utxo_set(utxos,
                                                          includeconf=True)
         if None in result:
             return
@@ -1112,12 +1125,13 @@ class CoinSwapParticipant(object):
         """
         #small wait in case unconfirmed txs not yet seen in mempool
         time.sleep(5)
+        from .blockchaininterface import sync_wallet
         sync_wallet(self.wallet)
         self.bbma = self.wallet.get_balance_by_mixdepth()
-        jlog.info("Wallet before: ")
-        jlog.info(pformat(self.bbmb))
-        jlog.info("Wallet after: ")
-        jlog.info(pformat(self.bbma))
+        cslog.info("Wallet before: ")
+        cslog.info(pformat(self.bbmb))
+        cslog.info("Wallet after: ")
+        cslog.info(pformat(self.bbma))
         if complete:
             report_msg = ["Coinswap completed OK."]
             report_msg.append("**************")
@@ -1154,7 +1168,7 @@ class CoinSwapParticipant(object):
                     report_msg += ["Amount: " + str(t.output_amount)]
                     report_msg += ["To address: " + t.output_address]
 
-        jlog.info("\n" + "\n".join(report_msg))
+        cslog.info("\n" + "\n".join(report_msg))
 
     @abc.abstractmethod
     def negotiate_coinswap_parameters(self):
@@ -1177,6 +1191,10 @@ class CoinSwapPublicParameters(object):
     required_key_names = ["key_2_2_AC_0", "key_2_2_AC_1", "key_2_2_CB_0",
                           "key_2_2_CB_1", "key_TX2_secret", "key_TX2_lock",
                           "key_TX3_secret", "key_TX3_lock"]
+    attr_list = ['tx0_amount', 'tx1_amount', 'tx2_recipient_amount',
+                  'tx3_recipient_amount', 'tx4_amount', 'tx5_amount',
+                  'tx4_address', 'tx5_address', 'timeouts', 'pubkeys',
+                  'session_id']
     def __init__(self,
                  tx01_amount=None,
                  tx24_recipient_amount=None,
@@ -1184,6 +1202,7 @@ class CoinSwapPublicParameters(object):
                  timeoutdata=None,
                  addressdata=None,
                  pubkeydata=None):
+        self.session_id = None
         self.timeouts_complete = False
         self.pubkeys_complete = False
         self.addresses_complete = False
@@ -1204,6 +1223,19 @@ class CoinSwapPublicParameters(object):
         if pubkeydata:
             self.set_pubkey_data(pubkeydata)
 
+    def set_session_id(self, sid=None):
+        if not sid:
+            self.session_id = str(random.randint(1, 1000000-1))
+        else:
+            try:
+                x = int(sid)
+                assert x in range(1, 1000000)
+            except:
+                cslog.info("Invalid sessionid: " + str(sid))
+                return False
+            self.session_id = sid
+        return True
+
     def serialize(self):
         """All data into a dict (for json persistence).
         Note that before this is complete, state machine
@@ -1212,24 +1244,20 @@ class CoinSwapPublicParameters(object):
         """
         assert self.is_complete()
         p = {}
-        for v in ['tx0_amount', 'tx1_amount', 'tx2_recipient_amount',
-                  'tx3_recipient_amount', 'tx4_amount', 'tx5_amount',
-                  'tx4_address', 'tx5_address', 'timeouts', 'pubkeys']:
+        for v in self.attr_list:
             p[v] = getattr(self, v)
         return p
     
     def deserialize(self, d):
         try:
-            for v in ['tx0_amount', 'tx1_amount', 'tx2_recipient_amount',
-                  'tx3_recipient_amount', 'tx4_amount', 'tx5_amount',
-                  'tx4_address', 'tx5_address', 'timeouts', 'pubkeys']:
+            for v in self.attr_list:
                 setattr(self, v, d[v])
-                self.addresses_complete = True
-                self.pubkeys_complete = True
-                self.timeouts_complete = True
+            self.addresses_complete = True
+            self.pubkeys_complete = True
+            self.timeouts_complete = True
             return True
         except:
-            jlog.info("Failed to deserialize coinswap public parameters")
+            cslog.info("Failed to deserialize coinswap public parameters")
             return False
         
     def set_pubkey(self, key, pubkey):
