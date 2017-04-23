@@ -8,6 +8,7 @@ from .base import (CSCS_VERSION, CoinSwapException, CoinSwapPublicParameters,
                       generate_escrow_redeem_script)
 from .configure import (cs_single, get_network, get_log,
                         load_coinswap_config)
+from .cli_options import get_coinswap_parser
 from .blockchaininterface import (sync_wallet, RegtestBitcoinCoreInterface,
                                   BitcoinCoreInterface)
 from .alice import CoinSwapAlice

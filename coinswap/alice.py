@@ -67,12 +67,15 @@ class CoinSwapAlice(CoinSwapParticipant):
                 (self.see_tx0_tx1, True, -1),
                 #only updates after confirmation; the custom delay here is to
                 #account for network propagation delays for the TX0/TX1 conf.
-                (self.wait_for_phase_2, False, 30),
+                (self.wait_for_phase_2, False, cs_single().config.getint(
+                    "TIMEOUT", "propagation_buffer")),
                 (self.send_coinswap_secret, False, -1),
                 (self.receive_tx5_sig, False, -1),
-                (self.broadcast_tx5, True, 30), #only updates after conf
-                (self.send_tx4_sig, False, -1),
-                (self.confirm_tx4_sig_receipt, False, 30)] #only updates after conf
+                #this state only completes on confirmation of TX5.
+                #We shouldn't really timeout here; honest behaviour means
+                #always send the tx4 sig; hence crucial to pay good fees.
+                (self.broadcast_tx5, True, 300000),
+                (self.send_tx4_sig, False, -1)]
 
     def send(self, *args):
         """The state machine state maps to a specific call in the
@@ -341,10 +344,6 @@ class CoinSwapAlice(CoinSwapParticipant):
         self.loop_tx4 = task.LoopingCall(self.wait_for_tx4_confirmation)
         self.loop_tx4.start(3.0)
         return (True, "TX4 signature sent.")
-
-    def confirm_tx4_sig_receipt(self, result):
-        cslog.info("Got this response from Carol to our TX4 sig: " + str(result))
-        return (result, "Carol received TX4 sig OK.")
 
     def wait_for_tx4_confirmation(self):
         """Receives notification from Carol that tx4 is seen on network;

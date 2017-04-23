@@ -929,7 +929,7 @@ class CoinSwapParticipant(object):
                 #Immediately (before L1), broadcast TX3 with the secret.
                 msg, success = self.tx3.push()
                 if not success:
-                    cslog.info("RPC error message: ", msg)
+                    cslog.info("RPC error message: " + msg)
                     cslog.info("Failed to broadcast TX3; here is raw form: ")
                     cslog.info(self.tx3.fully_signed_tx)
                     return quit(False, True)
@@ -1128,7 +1128,7 @@ class CoinSwapParticipant(object):
         non-co-operative case, for both sides.
         """
         #small wait in case unconfirmed txs not yet seen in mempool
-        time.sleep(5)
+        time.sleep(1)
         from .blockchaininterface import sync_wallet
         sync_wallet(self.wallet)
         self.bbma = self.wallet.get_balance_by_mixdepth()
@@ -1229,6 +1229,18 @@ class CoinSwapPublicParameters(object):
             self.set_addr_data(*addressdata)
         if pubkeydata:
             self.set_pubkey_data(pubkeydata)
+
+    def set_tx01_amounts(self, amt):
+        self.tx0_amount = amt
+        self.tx1_amount = amt
+
+    def set_tx24_recipient_amounts(self, amt):
+        self.tx2_recipient_amount = amt
+        self.tx4_amount = amt
+
+    def set_tx35_recipient_amounts(self, amt):
+        self.tx3_recipient_amount = amt
+        self.tx5_amount = amt
 
     def set_session_id(self, sid=None):
         if not sid:

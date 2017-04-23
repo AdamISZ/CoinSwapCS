@@ -60,29 +60,29 @@ class CoinSwapCarol(CoinSwapParticipant):
                 (self.receive_tx3_sig, False, -1),
                  #alice waits for confirms before sending secret; this accounts
                  #for propagation delays.
-                (self.push_tx1, False, 30),
+                (self.push_tx1, False, cs_single().config.getint(
+                    "TIMEOUT", "propagation_buffer")),
                 (self.receive_secret, False, -1),
                  #alice waits for confirms on TX5 before sending TX4 sig
                 (self.send_tx5_sig, True, 30),
                 (self.receive_tx4_sig, False, -1),
                 (self.broadcast_tx4, True, -1)]
 
-    def set_handshake_parameters(self, source_chain="BTC",
-                                 destination_chain="BTC",
-                                 minimum_amount=1000000,
-                                 maximum_amount=100000000):
+    def set_handshake_parameters(self):
         """Sets the conditions under which Carol is
         prepared to do a coinswap.
         """
-        self.source_chain = source_chain
-        self.destination_chain = destination_chain
-        self.minimum_amount = minimum_amount
-        self.maximum_amount = maximum_amount
+        c = cs_single().config
+        self.source_chain = c.get("SERVER", "source_chain")
+        self.destination_chain = c.get("SERVER", "destination_chain")
+        self.minimum_amount = c.getint("SERVER", "minimum_amount")
+        self.maximum_amount = c.getint("SERVER", "maximum_amount")
 
     def handshake(self, d):
         """Check that the proposed coinswap parameters
         are acceptable.
         """
+        self.set_handshake_parameters()
         self.bbmb = self.wallet.get_balance_by_mixdepth()
         if d["coinswapcs_version"] != cs_single().CSCS_VERSION:
             return (False, "wrong CoinSwapCS version, was: " + \
@@ -115,9 +115,9 @@ class CoinSwapCarol(CoinSwapParticipant):
         for k in self.required_key_names:
             self.coinswap_parameters.set_pubkey(k, self.keyset[k][1])
         try:
-            self.coinswap_parameters.tx0_amount = params[0]
-            self.coinswap_parameters.tx2_recipient_amount = params[1]
-            self.coinswap_parameters.tx3_recipient_amount = params[2]
+            self.coinswap_parameters.set_tx01_amounts(params[0])
+            self.coinswap_parameters.set_tx24_recipient_amounts(params[1])
+            self.coinswap_parameters.set_tx35_recipient_amounts(params[2])
             self.coinswap_parameters.set_pubkey("key_2_2_AC_0", params[3])
             self.coinswap_parameters.set_pubkey("key_2_2_CB_1", params[4])
             self.coinswap_parameters.set_pubkey("key_TX2_lock", params[5])

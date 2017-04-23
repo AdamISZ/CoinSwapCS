@@ -110,6 +110,12 @@ rpc_password = password
 #and executing backout. This is only applied in cases where response is intended
 #to be immediate.
 default_network_timeout = 60
+#How long to wait (in seconds, integer only) for the counterparty to confirm
+#blockchain state that we've already seen (if client);
+#this is to account for propagation delays on the BTC network,
+#mainly. Used in waiting to proceed to second phase after first (TX0,TX1) is
+#complete.
+propagation_buffer = 120
 #How many blocks to wait for ensured confirmation for the first stage (funding) txs.
 #Note that the this value must be agreed with the server.
 tx01_confirm_wait = 2
@@ -120,11 +126,11 @@ tx01_confirm_wait = 2
 #but if you do, read the following notes and make sure you understand.
 #Locktime for TX3 (server's timeout); the server can refund her pay-in transaction
 #after this number of blocks, from the starting time
-lock_server = 10
+lock_server = 50
 #Locktime for TX2 (client's timeout); the client can refund her pay-in transaction
 #after this number of blocks, from the starting time. Note that this has to be a
 #longer timeout than that for the server (generally it should be ~2xserver timeout).
-lock_client = 20
+lock_client = 100
 
 [SESSIONS]
 #Location of directory where sessions are stored for recovery, it is located under
@@ -134,19 +140,6 @@ lock_client = 20
 #coinswaps are completed. Also, NEVER EDIT THE CONTENTS OF SESSION FILES, only
 #read them; editing could make a failed coinswap unrecoverable!
 sessions_dir = sessions
-[FEES]
-# The number of blocks to target to calculate the fee for the normal,
-# cooperative transactions.
-default_fee_target = 2
-#The number of blocks to target to calculate the fee for backout transactions;
-#these transactions are high priority since in certain cases they may become
-#invalid after a certain amount of time (although only if the counterparty is
-#malicious).
-#Note that this and the following value must be agreed with the server.
-backout_fee_target = 1
-#Further to the above, an additional fee multiplier may be applied to give
-#extra priority (by default target=1 block is considered enough, so x1.0 here).
-backout_fee_multiplier = 1.0
 [POLICY]
 # for dust sweeping, try merge_algorithm = gradual
 # for more rapid dust sweeping, try merge_algorithm = greedy
@@ -158,8 +151,29 @@ merge_algorithm = default
 # if you set N=1, so we choose N=3 for a more reasonable figure,
 # as our default.
 tx_fees = 3
+#A value, in satoshis/kB, above which the fee is not allowed to be.
+#keep this fairly high, as exceeding it causes the program to 'panic'
+#and shut down.
 absurd_fee_per_kb = 250000
+#The number of blocks to target to calculate the fee for backout transactions;
+#these transactions are high priority since in certain cases they may become
+#invalid after a certain amount of time (although only if the counterparty is
+#malicious).
+#Note that this and the following value must be agreed with the server.
+backout_fee_target = 1
+#Further to the above, an additional fee multiplier may be applied to give
+#extra priority (by default target=1 block is considered enough, so x1.0 here).
+backout_fee_multiplier = 1.0
 
+[SERVER]
+#These settings can be safely ignored if you are running as client ('Alice')
+#source and destination chain is reserved for possible future implementations
+#cross-chain.
+source_chain = BTC
+destination_chain = BTC
+#minimum and maximum allowable coinswap amounts, in satoshis
+minimum_amount = 5000000
+maximum_amount = 500000000
 """
 
 def lookup_appdata_folder():
