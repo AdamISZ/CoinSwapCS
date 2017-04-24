@@ -340,7 +340,7 @@ class CoinSwapCarol(CoinSwapParticipant):
         self.tx4_loop.stop()
         self.tx4_confirmed = True
         cslog.info("Carol received: " + self.tx4.txid + ", now ending.")
-        self.final_report()
+        self.quit()
 
     def is_tx4_confirmed(self):
         if self.tx4_confirmed:
@@ -381,7 +381,7 @@ class CoinSwapCarol(CoinSwapParticipant):
             self.coinswap_parameters.pubkeys["key_TX3_lock"],
             self.tx3.txid + ":0",
             self.coinswap_parameters.tx5_amount,
-            self.coinswap_parameters.tx5_address)
+            self.coinswap_parameters.tx4_address)
         self.tx3redeem.sign_at_index(self.keyset["key_TX3_lock"][0], 0)
         wallet_name = cs_single().bc_interface.get_wallet_name(self.wallet)
         self.import_address(self.tx3redeem.output_address)
@@ -438,6 +438,7 @@ class CoinSwapCarol(CoinSwapParticipant):
             self.carol_watcher_loop.stop()
             cslog.info("Redeemed funds via TX3 OK, txid of redeeming transaction "
                       "is: " + self.tx3redeem.txid)
+            self.quit(complete=False, failed=False)
             return
         if self.tx3.is_spent:
             if btc.txhash(self.tx3.spending_tx) != redeeming_txid:

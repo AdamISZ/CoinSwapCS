@@ -33,6 +33,7 @@ def main_server(options, wallet):
         carol.bbmb = wallet.get_balance_by_mixdepth()
         carol.load()
         carol.backout("Recovering from shutdown")
+        reactor.run()
         return
     tx4address = wallet.get_new_addr(1, 1)
     #For now let's use a simple default of 10 blocks for LOCK1 and 20 for LOCK0
@@ -108,10 +109,12 @@ def main():
     #(TODO is to attempt restarting normally before backing out)
     #TODO sessionid
     if options.recover:
+        session_id = options.recover
         alice = CoinSwapAlice(wallet, 'alicestate')
         alice.bbmb = wallet.get_balance_by_mixdepth()
-        alice.load()
+        alice.load(sessionid=session_id)
         alice.backout("Recovering from shutdown")
+        reactor.run()
         return
     if len(args) > 2:
         tx5address = args[2]

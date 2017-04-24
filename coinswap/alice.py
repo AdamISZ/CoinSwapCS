@@ -366,5 +366,4 @@ class CoinSwapAlice(CoinSwapParticipant):
             return
         self.txid4 = result
         self.loop_tx4.stop()
-        self.final_report()
-        reactor.stop()
+        self.quit()
