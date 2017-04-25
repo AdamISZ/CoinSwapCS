@@ -30,8 +30,6 @@ cslog = get_log()
 class CoinSwapCarol(CoinSwapParticipant):
     """
     State machine:
-    * indicates not reached in cooperative case.
-    ** indicates end.
     State 0: pre-initialisation
     State 1: handshake complete
     State 2: Parameter negotiation complete.
@@ -405,7 +403,7 @@ class CoinSwapCarol(CoinSwapParticipant):
             cslog.info("Failed to broadcast TX2; here is raw form: ")
             cslog.info(self.tx2.fully_signed_tx)
             return
-        #**CONSTRUCT TX2-redeem-secret; note tx*5* address is used.
+        #**CONSTRUCT TX2-redeem-secret; note tx*4* address is used.
         tx2redeem_secret = CoinSwapRedeemTX23Secret(self.secret,
                         self.coinswap_parameters.pubkeys["key_TX2_secret"],
                         self.coinswap_parameters.timeouts["LOCK0"],

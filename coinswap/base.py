@@ -790,8 +790,6 @@ class CoinSwapParticipant(object):
 
     def finalize(self):
         self.persist()
-        #for testing only
-        self.load()
 
     def load(self, sessionid=None):
         sess_loc = os.path.join(cs_single().homedir,

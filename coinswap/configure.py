@@ -164,6 +164,18 @@ backout_fee_target = 1
 #Further to the above, an additional fee multiplier may be applied to give
 #extra priority (by default target=1 block is considered enough, so x1.0 here).
 backout_fee_multiplier = 1.0
+# the range of confirmations passed to the `listunspent` bitcoind RPC call
+# 1st value is the inclusive minimum, defaults to one confirmation
+# 2nd value is the exclusive maximum, defaults to most-positive-bignum (Google Me!)
+# leaving it unset or empty defers to bitcoind's default values, ie [1, 9999999]
+#listunspent_args = []
+# that's what you should do, unless you have a specific reason, eg:
+#  spend from unconfirmed transactions:  listunspent_args = [0]
+# display only unconfirmed transactions: listunspent_args = [0, 1]
+# defend against small reorganizations:  listunspent_args = [3]
+#   who is at risk of reorganization?:   listunspent_args = [0, 2]
+
+
 
 [SERVER]
 #These settings can be safely ignored if you are running as client ('Alice')

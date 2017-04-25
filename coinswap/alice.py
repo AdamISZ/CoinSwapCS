@@ -28,8 +28,6 @@ cslog = get_log()
 class CoinSwapAlice(CoinSwapParticipant):
     """
     State machine:
-    * indicates not reached in cooperative case.
-    ** indicates end.
     State 0: pre-initialisation
     State 1: handshake complete
     State 2: Parameter negotiation initiated.
