@@ -754,8 +754,11 @@ class CoinSwapParticipant(object):
         self.tx3 = None
         self.tx4 = None
         self.tx5 = None
-        #used by Alice to record reported TX4 tx (Alice doesn't care)
+        #other-side txids may not be available if quitting at certain points
+        self.txid0 = None
+        self.txid1 = None
         self.txid4 = None
+        self.txid5 = None
         self.secret = None
         self.hashed_secret = None
         #currently only used by Carol; TODO
@@ -907,7 +910,8 @@ class CoinSwapParticipant(object):
                 if bh < self.coinswap_parameters.timeouts["LOCK0"] + 1:
                     cslog.info("Not ready to redeem the funds, "
                              "waiting for block: " + str(
-                                 self.coinswap_parameters.timeouts["LOCK0"]))
+                                 self.coinswap_parameters.timeouts["LOCK0"]) + \
+                             ", current block: " + str(bh))
                     reactor.callLater(3.0, self.backout, backoutmsg)
                     return
                 msg, success = self.tx2.push()
@@ -1149,20 +1153,20 @@ class CoinSwapParticipant(object):
             report_msg.append("**************")
             report_msg.append("Pay in transaction from Alice to 2-of-2:")
             rtxid0 = self.tx0.txid if self.tx0 else self.txid0
-            report_msg.append("Txid: " + rtxid0)
+            report_msg.append("Txid: " + str(rtxid0))
             report_msg.append("Amount: " + str(self.coinswap_parameters.tx0_amount))
             report_msg.append("Pay in transaction from Carol to 2-of-2:")
             rtxid1 = self.tx1.txid if self.tx1 else self.txid1
-            report_msg.append("Txid: " + rtxid1)
+            report_msg.append("Txid: " + str(rtxid1))
             report_msg.append("Amount: " + str(self.coinswap_parameters.tx1_amount))
             report_msg.append("Pay out transaction from 2-of-2 to Carol:")
-            rtxid4 = self.tx4.txid if self.tx4.txid else self.txid4
+            rtxid4 = self.tx4.txid if self.tx4 else self.txid4
             report_msg.append("Txid: " + str(rtxid4))
             report_msg.append("Receiving address: " + self.coinswap_parameters.tx4_address)
             report_msg.append("Amount: " + str(self.coinswap_parameters.tx4_amount))
             report_msg.append("Pay out transaction from 2-of-2 to Alice:")
-            rtxid5 = self.tx5.txid if self.tx5.txid else self.txid5
-            report_msg.append("Txid: " + rtxid5)
+            rtxid5 = self.tx5.txid if self.tx5 else self.txid5
+            report_msg.append("Txid: " + str(rtxid5))
             report_msg.append("Receiving address: " + self.coinswap_parameters.tx5_address)
             report_msg.append("Amount: " + str(self.coinswap_parameters.tx5_amount))
         else:
