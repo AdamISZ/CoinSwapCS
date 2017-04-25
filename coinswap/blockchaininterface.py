@@ -270,9 +270,16 @@ class BitcoinCoreInterface(BlockchainInterface):
     def get_wallet_name(wallet):
         return 'joinmarket-wallet-' + btc.dbl_sha256(wallet.keys[0][0])[:6]
 
+    def get_block(self, blockheight):
+        block_hash = self.rpc('getblockhash', [blockheight])
+        block = self.rpc('getblock', [block_hash, False])
+        if not block:
+            return False
+        return block
+
     def rpc(self, method, args):
         if method not in ['importaddress', 'walletpassphrase', 'getaccount',
-                          'getrawtransaction']:
+                          'getrawtransaction', 'getblock', 'getblockhash']:
             cslog.debug('rpc: ' + method + " " + str(args))
         res = self.jsonRpc.call(method, args)
         if isinstance(res, unicode):

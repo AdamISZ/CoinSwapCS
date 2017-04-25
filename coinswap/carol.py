@@ -22,8 +22,9 @@ from coinswap import (CoinSwapException, CoinSwapPublicParameters,
                       CoinSwapTX23, CoinSwapTX45, CoinSwapRedeemTX23Secret,
                       CoinSwapRedeemTX23Timeout, COINSWAP_SECRET_ENTROPY_BYTES,
                       get_coinswap_secret, get_current_blockheight,
-                      create_hash_script, detect_spent, get_secret_from_vin,
-                      generate_escrow_redeem_script, cs_single)
+                      create_hash_script, get_secret_from_vin,
+                      generate_escrow_redeem_script, cs_single,
+                      get_transactions_from_block)
 
 cslog = get_log()
 
@@ -449,3 +450,26 @@ class CoinSwapCarol(CoinSwapParticipant):
                 self.redeem_tx2_with_secret()
                 reactor.stop()
                 return
+
+    def scan_blockchain_for_secret(self):
+        """Only required by Carol; in cases where the wallet
+        monitoring fails (principally because a secret-redeeming
+        transaction by Alice occurred when we were not on-line),
+        we must be able to find the secret directly from scanning
+        the blockchain. This could be achieved with indexing on
+        our Bitcoin Core instance, but since this requires a lot of
+        resources, it's simpler to directly parse the relevant blocks.
+        """
+        bh = get_current_blockheight()
+        starting_blockheight = self.coinswap_parameters.timeouts[
+            "LOCK0"] - cs_single().config.getint("TIMEOUT", "lock_client")
+        while bh >= starting_blockheight:
+            found_txs = get_transactions_from_block(bh)
+            for t in found_txs:
+                retval = get_secret_from_vin(t['ins'], self.hashed_secret)
+                if retval:
+                    self.secret = retval
+                    return True
+            bh -= 1
+        cslog.info("Failed to find secret from scanning blockchain.")
+        return False

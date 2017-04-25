@@ -61,24 +61,37 @@ def int_to_tx_ser(x):
     h = h[::-1]
     return h
 
-def detect_spent(txid, n, unconf=False):
-    """Uses bitcoin rpc 'listunspent' to find out
-    if the utxo specified is still not spent. 
-    Assumes use of blockchain_source that has an
-    rpc method.
-    Assumes that the utxo is associated with an address
-    in the wallet (whether default account or watch-only).
-    Returns True if not found (i.e. spent), False if found.
-    Note that interpreting 'True' as 'spent' implicitly
-    assumes that the utxo existed on the network.
-    """
-    #Using listunspent arguments 0, 9999999, this means
-    #the transaction *containing* the utxo/outpoint must be at least seen.
-    #Otherwise, default 1, 9999999 requires it to be confirmed.
-    first = 0 if unconf else 1
-    unspent_list = cs_single().bc_interface.rpc('listunspent', [first, 9999999])
-    filtered = [u for u in unspent_list if (u['txid'] == txid and u['vout'] == n)]
-    return True if len(filtered) == 0 else False
+def read_length(x):
+    bx = binascii.unhexlify(x)
+    val = ord(bx[0])
+    if val < 253:
+        n = 1
+    elif val == 253:
+        val = btc.decode(bx[1:3][::-1], 256)
+        n = 3
+    elif val == 254:
+        val = btc.decode(bx[1:5][::-1], 256)
+        n = 5
+    elif val == 255:
+        val = btc.decode(bx[1:9][::-1], 256)
+        n = 9
+    else:
+        assert False
+    return (val, n)
+
+def get_transactions_from_block(blockheight):
+    block = cs_single().bc_interface.get_block(blockheight)
+    txdata = block[160:]
+    ntx, nbytes = read_length(txdata)
+    txdata = txdata[nbytes*2:]
+    found_txs = []
+    for i in range(ntx):
+        tx = btc.deserialize(txdata)
+        if i != 0:
+            found_txs.append(tx)
+        len_tx = len(btc.serialize(tx))
+        txdata = txdata[len_tx:]
+    return found_txs
 
 def msig_data_from_pubkeys(pubkeys, N):
     """Create a p2sh address for the list of pubkeys given, N signers required.
@@ -116,7 +129,7 @@ def get_secret_from_vin(vins, hashed_secret):
             continue
         candidate_secret = get_coinswap_secret(raw_secret=ss_deserialized[1])
         if candidate_secret[1] == hashed_secret:
-            cslog.info("Found secret on blockchain: ", candidate_secret)
+            cslog.info("Found secret on blockchain: " + candidate_secret[0])
             return candidate_secret[0]
         else:
             cslog.info("Candidate vin had entry of right length, but wrong secret.")
@@ -767,7 +780,7 @@ class CoinSwapParticipant(object):
         self.successful_tx3_redeem = None
         self.sm = StateMachine(self.state, self.backout,
                                self.get_state_machine_callbacks())
-        self.sm.set_finalize(self.finalize)        
+        self.sm.set_finalize(self.finalize)
 
     def import_address(self, address):
         """To support checking transactions, import
@@ -1038,6 +1051,16 @@ class CoinSwapParticipant(object):
                 if not self.tx3.is_broadcast:
                     msg, success = self.tx3.push()
                     if not success:
+                        #Failure to broadcast TX3 may be because it's already
+                        #been broadcast and redeemed. Try scanning the blockchain
+                        #to find the secret.
+                        scan_success = self.scan_blockchain_for_secret()
+                        if scan_success:
+                            self.redeem_tx2_with_secret()
+                            self.quit(False, False)
+                            return
+                        #TODO: corner case: TX3 broadcast, but for some reason
+                        #not recorded as broadcast (restart), but not redeemed.
                         cslog.info("Failed to broadcast TX3, "
                                   "RPC error message: " + msg)
                         cslog.info("Failed to broadcast TX3; here is raw form: ")

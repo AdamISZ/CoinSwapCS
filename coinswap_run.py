@@ -29,9 +29,10 @@ def main_server(options, wallet):
     #(TODO is to attempt restarting normally before backing out)
     #TODO sessionid
     if options.recover:
+        session_id = options.recover
         carol = CoinSwapCarol(wallet, 'carolstate')
         carol.bbmb = wallet.get_balance_by_mixdepth()
-        carol.load()
+        carol.load(sessionid=session_id)
         carol.backout("Recovering from shutdown")
         reactor.run()
         return
@@ -106,8 +107,6 @@ def main():
         cs_single().config.set("BLOCKCHAIN", "rpc_host", "127.3.0.2")
     
     #if restart option selected, read state and backout
-    #(TODO is to attempt restarting normally before backing out)
-    #TODO sessionid
     if options.recover:
         session_id = options.recover
         alice = CoinSwapAlice(wallet, 'alicestate')
@@ -136,7 +135,6 @@ def main():
     alice_client = CoinSwapJSONRPCClient(server, port,
                                          alice.sm.tick, alice.backout)
     alice.set_jsonrpc_client(alice_client)
-    #call to alice's start(), when running, will initiate the protocol
     reactor.callWhenRunning(alice.sm.tick)
     reactor.run()
 
