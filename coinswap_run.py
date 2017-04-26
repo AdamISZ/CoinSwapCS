@@ -36,19 +36,9 @@ def main_server(options, wallet):
         carol.backout("Recovering from shutdown")
         reactor.run()
         return
-    tx4address = wallet.get_new_addr(1, 1)
-    #For now let's use a simple default of 10 blocks for LOCK1 and 20 for LOCK0
-    current_blockheight = get_current_blockheight()
-    lock0 = current_blockheight + 20
-    lock1 = current_blockheight + 10
-    #instantiate the parameters, but don't yet have the ephemeral pubkeys
-    #or destination addresses.
-    cpp = CoinSwapPublicParameters()
-    cpp.set_tx4_address(tx4address)
-    cpp.set_timeouts(lock0, lock1)
-    carol = CoinSwapCarol(wallet, 'carolstate', cpp)
+    #TODO currently ignores server setting here and uses localhost
     _server, port = options.serverport.split(":")
-    reactor.listenTCP(int(port), server.Site(CoinSwapCarolJSONServer(carol)))
+    reactor.listenTCP(int(port), server.Site(CoinSwapCarolJSONServer(wallet)))
     reactor.run()
 
 def main():

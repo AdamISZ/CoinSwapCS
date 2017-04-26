@@ -403,7 +403,7 @@ class CoinSwapCarol(CoinSwapParticipant):
             cslog.info("RPC error message: " + msg)
             cslog.info("Failed to broadcast TX2; here is raw form: ")
             cslog.info(self.tx2.fully_signed_tx)
-            return
+            return False
         #**CONSTRUCT TX2-redeem-secret; note tx*4* address is used.
         tx2redeem_secret = CoinSwapRedeemTX23Secret(self.secret,
                         self.coinswap_parameters.pubkeys["key_TX2_secret"],
@@ -423,10 +423,12 @@ class CoinSwapCarol(CoinSwapParticipant):
             cslog.info("Failed to broadcast TX2 redeem; here is raw form: ")
             cslog.info(tx2redeem_secret.fully_signed_tx)
             cslog.info(tx2redeem_secret)
+            return False
         else:
             cslog.info("Successfully redeemed funds via TX2, to address: "+\
                       self.coinswap_parameters.tx4_address + ", in txid: " +\
                       tx2redeem_secret.txid)
+            return True
 
     def watch_for_tx3_spends(self, redeeming_txid):
         """Function used to check whether our, or a competing
@@ -445,10 +447,10 @@ class CoinSwapCarol(CoinSwapParticipant):
                 retval = self.find_secret_from_tx3_redeem()
                 if not retval:
                     cslog.info("CRITICAL ERROR: Failed to find secret from TX3 redeem.")
-                    reactor.stop()
+                    self.quit(False, True)
                     return
-                self.redeem_tx2_with_secret()
-                reactor.stop()
+                rt2s_success = self.redeem_tx2_with_secret()
+                self.quit(False, not rt2s_success)
                 return
 
     def scan_blockchain_for_secret(self):

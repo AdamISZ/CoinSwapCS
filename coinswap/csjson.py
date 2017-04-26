@@ -2,6 +2,7 @@ from txjsonrpc.web.jsonrpc import Proxy
 from txjsonrpc.web import jsonrpc
 from twisted.web import server
 from twisted.internet import reactor
+from .base import get_current_blockheight, CoinSwapPublicParameters
 from .alice import CoinSwapAlice
 from .carol import CoinSwapCarol
 from .configure import get_log
@@ -50,15 +51,19 @@ class CoinSwapJSONRPCClient(object):
         d.addCallback(self.json_callback).addErrback(self.error)
 
 class CoinSwapCarolJSONServer(jsonrpc.JSONRPC):
-    def __init__(self, csc):
-        assert isinstance(csc, CoinSwapCarol)
-        self.carol = csc
+    def __init__(self, wallet):
+        self.wallet = wallet
         jsonrpc.JSONRPC.__init__(self)
 
     def set_carol(self, carol):
         self.carol = carol
 
     def jsonrpc_handshake(self, alice_handshake):
+        #Prepare a new CoinSwapCarol instance for this session
+        tx4address = self.wallet.get_new_addr(1, 1)
+        cpp = CoinSwapPublicParameters()
+        cpp.set_tx4_address(tx4address)
+        self.set_carol(CoinSwapCarol(self.wallet, 'carolstate', cpp))
         return self.carol.sm.tick_return("handshake", alice_handshake)
     def jsonrpc_negotiate(self, *alice_parameter_list):
         return self.carol.sm.tick_return("negotiate_coinswap_parameters",

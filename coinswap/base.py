@@ -903,7 +903,7 @@ class CoinSwapParticipant(object):
             #Failure in negotiation; nothing to do
             cslog.info("Failure in parameter negotiation; no action required; "
                      "ending.")
-            reactor.stop()
+            self.quit(False, False)
             return
         if (isinstance(self, CoinSwapAlice) and self.sm.state in range(7)) or \
            (isinstance(self, CoinSwapCarol) and self.sm.state in range(6)):
@@ -911,7 +911,7 @@ class CoinSwapParticipant(object):
             #Alice/Carol may have sent signatures on spend-out transactions
             #but this is irrelevant as long as TX0/1 is not on the network.
             cslog.info("No funds have moved; no action required; ending.")
-            reactor.stop()
+            self.quit(False, False)
             return
         #Handling for later states depends on Alice/Carol
         if isinstance(self, CoinSwapAlice):
@@ -1056,8 +1056,8 @@ class CoinSwapParticipant(object):
                         #to find the secret.
                         scan_success = self.scan_blockchain_for_secret()
                         if scan_success:
-                            self.redeem_tx2_with_secret()
-                            self.quit(False, False)
+                            rt2s_success = self.redeem_tx2_with_secret()
+                            self.quit(False, not rt2s_success)
                             return
                         #TODO: corner case: TX3 broadcast, but for some reason
                         #not recorded as broadcast (restart), but not redeemed.
@@ -1078,10 +1078,10 @@ class CoinSwapParticipant(object):
                         cslog.info("CRITICAL ERROR: Failed to retrieve secret "
                                   "from TX3 broadcast by Alice.")
                         return self.quit(False, True)
-                    self.redeem_tx2_with_secret()
+                    rt2s_success = self.redeem_tx2_with_secret()
                     #tx2 redemption cannot be conflicted before L0, so
                     #safe to return
-                    return self.quit(False, False)
+                    return self.quit(False, not rt2s_success)
                 else:
                     if not self.redeem_tx3_with_lock():
                         return self.quit(False, True)
@@ -1100,8 +1100,8 @@ class CoinSwapParticipant(object):
                 #Alice did not provide TX4 sig but we already allowed
                 #TX5 spend; we use X to redeem from TX2, before L0.
                 #No wait needed.
-                self.redeem_tx2_with_secret()
-                return self.quit(False, False)
+                rt2s_success = self.redeem_tx2_with_secret()
+                return self.quit(False, not rt2s_success)
             elif self.sm.state == 9:
                 #We are now in possession of a valid TX4 signature; either we
                 #already broadcast it, or we do so now.
@@ -1165,6 +1165,8 @@ class CoinSwapParticipant(object):
         non-co-operative case, for both sides.
         """
         from .blockchaininterface import sync_wallet
+        from .alice import CoinSwapAlice
+        from .carol import CoinSwapCarol
         sync_wallet(self.wallet)
         self.bbma = self.wallet.get_balance_by_mixdepth()
         cslog.info("Wallet before: ")
@@ -1209,7 +1211,11 @@ class CoinSwapParticipant(object):
 
         cslog.info("\n" + "\n".join(report_msg))
         #Reactor stop must be deferred until after the report is complete.
-        reactor.stop()
+        #Carol (server) must not shutdown unless there was a failure; in which
+        #case it's prudent to shutdown, as this is a serious failure.
+        if isinstance(self, CoinSwapAlice) or (
+            isinstance(self, CoinSwapCarol) and failed == True):
+            reactor.stop()
 
     @abc.abstractmethod
     def negotiate_coinswap_parameters(self):
