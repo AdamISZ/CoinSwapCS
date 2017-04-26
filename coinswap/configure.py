@@ -184,7 +184,20 @@ backout_fee_multiplier = 1.0
 #cross-chain.
 source_chain = BTC
 destination_chain = BTC
-#minimum and maximum allowable coinswap amounts, in satoshis
+#port on which to serve
+port = 7080
+#whether to use SSL; non-SSL is *strongly* disrecommended, mainly because
+#you lose confidentiality, it also allows MITM which is not a loss of funds risk,
+#but again a loss of confidentiality risk. Note that client-side verification
+#of cert is required to actually prevent MITM.
+use_ssl = true
+#directory containing private key and cert *.pem files; 0 means default location,
+#which is homedir/ssl/ ; replace with fully qualified paths if needed.
+ssl_private_key_location = 0
+ssl_certificate_location = 0
+#minimum and maximum allowable coinswap amounts, in satoshis;
+#note these are "bounding" values, the actual maximum will change according
+#to what's available in mixdepth 0 of the wallet.
 minimum_amount = 5000000
 maximum_amount = 500000000
 """

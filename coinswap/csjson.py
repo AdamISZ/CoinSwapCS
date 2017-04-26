@@ -2,6 +2,11 @@ from txjsonrpc.web.jsonrpc import Proxy
 from txjsonrpc.web import jsonrpc
 from twisted.web import server
 from twisted.internet import reactor
+try:
+    from OpenSSL import SSL
+    from twisted.internet import ssl
+except:
+    pass
 from .base import get_current_blockheight, CoinSwapPublicParameters
 from .alice import CoinSwapAlice
 from .carol import CoinSwapCarol
@@ -9,6 +14,25 @@ from .configure import get_log
 from twisted.internet import defer  
 
 cslog = get_log()
+
+def verifyCallback(connection, x509, errnum, errdepth, ok):
+    if not ok:
+        cslog.debug('invalid server cert: %s' % x509.get_subject())
+        return False
+    return True
+
+class AltCtxFactory(ssl.ClientContextFactory):
+    def getContext(self):
+        ctx = ssl.ClientContextFactory.getContext(self)
+        #TODO: replace VERIFY_NONE with VERIFY_PEER when we have
+        #a real server with a valid CA signed cert. If that doesn't
+        #work it'll be possible to use self-signed certs, if they're distributed,
+        #by placing the cert.pem file and location in the config and uncommenting
+        #the ctx.load_verify_locations line.
+        #As it stands this is using non-authenticated certs, meaning MITM exposed.
+        ctx.set_verify(SSL.VERIFY_NONE, verifyCallback)
+        #ctx.load_verify_locations("/path/to/cert.pem")
+        return ctx
 
 class CoinSwapJSONRPCClient(object):
     """A class encapsulating Alice's json rpc client.
@@ -20,14 +44,18 @@ class CoinSwapJSONRPCClient(object):
                     5: "sigtx3",
                     9: "secret",
                     12: "sigtx4"}
-    def __init__(self, host, port, json_callback, backout_callback):
+    def __init__(self, host, port, json_callback, backout_callback, usessl):
         self.host = host
         self.port = int(port)
         #Callback fired on receiving response to send()
         self.json_callback = json_callback
         #Callback fired on receiving any response failure
         self.backout_callback = backout_callback
-        self.proxy = Proxy('http://' + host + ":" + str(port) + "/")
+        if usessl:
+            self.proxy = Proxy('https://' + host + ":" + str(port) + "/",
+                           ssl_ctx_factory=AltCtxFactory)
+        else:
+            self.proxy = Proxy('http://' + host + ":" + str(port) + "/")
     
     def error(self, errmsg):
         """error callback implies we must back out at this point.
@@ -62,6 +90,7 @@ class CoinSwapCarolJSONServer(jsonrpc.JSONRPC):
         TODO check for sessionid conflicts here.
         """
         self.carols[sessionid] = carol
+        return True
 
     def jsonrpc_handshake(self, alice_handshake):
         """The handshake messages initiates the session, so is handled
@@ -72,8 +101,9 @@ class CoinSwapCarolJSONServer(jsonrpc.JSONRPC):
         tx4address = self.wallet.get_new_addr(1, 1)
         cpp = CoinSwapPublicParameters()
         cpp.set_tx4_address(tx4address)
-        self.set_carol(CoinSwapCarol(self.wallet, 'carolstate', cpp),
-                                    alice_handshake["session_id"])
+        if not self.set_carol(CoinSwapCarol(self.wallet, 'carolstate', cpp),
+                                    alice_handshake["session_id"]):
+            return False
         return self.carols[alice_handshake["session_id"]].sm.tick_return(
             "handshake", alice_handshake)
 

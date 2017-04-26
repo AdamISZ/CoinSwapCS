@@ -9,6 +9,10 @@ from coinswap import (cs_single, CoinSwapPublicParameters, CoinSwapAlice,
                       get_coinswap_parser, CoinSwapCarolJSONServer)
 
 from twisted.internet import reactor
+try:
+    from twisted.internet import ssl
+except ImportError:
+    pass
 from twisted.python import log
 from twisted.web import server
 
@@ -17,6 +21,25 @@ import os
 import sys
 
 cslog = get_log()
+
+def get_ssl_context():
+    """Construct an SSL context factory from the user's privatekey/cert.
+    TODO: document set up for server operators.
+    """
+    pkcdata = {}
+    for x, y in zip(["ssl_private_key_location", "ssl_certificate_location"],
+                    ["key.pem", "cert.pem"]):
+        if cs_single().config.get("SERVER", x) == "0":
+            sslpath = os.path.join(cs_single().homedir, "ssl")
+            if not os.path.exists(sslpath):
+                print("No ssl configuration in home directory, please read "
+                      "installation instructions and try again.")
+                sys.exit(0)
+            pkcdata[x] = os.path.join(sslpath, y)
+        else:
+            pkcdata[x] = cs_single().config.get("SERVER", x)
+    return ssl.DefaultOpenSSLContextFactory(pkcdata["ssl_private_key_location"],
+                                            pkcdata["ssl_certificate_location"])
 
 def main_server(options, wallet):
     #to allow testing of confirm/unconfirm callback for multiple txs
@@ -27,7 +50,6 @@ def main_server(options, wallet):
         cs_single().config.set("BLOCKCHAIN", "rpc_host", "127.0.0.2")
     #if restart option selected, read state and backout
     #(TODO is to attempt restarting normally before backing out)
-    #TODO sessionid
     if options.recover:
         session_id = options.recover
         carol = CoinSwapCarol(wallet, 'carolstate')
@@ -37,8 +59,13 @@ def main_server(options, wallet):
         reactor.run()
         return
     #TODO currently ignores server setting here and uses localhost
-    _server, port = options.serverport.split(":")
-    reactor.listenTCP(int(port), server.Site(CoinSwapCarolJSONServer(wallet)))
+    port = cs_single().config.getint("SERVER", "port")
+    if cs_single().config.get("SERVER", "use_ssl") != "false":
+        reactor.listenSSL(int(port), server.Site(CoinSwapCarolJSONServer(wallet)),
+                      contextFactory = get_ssl_context())
+    else:
+        cslog.info("WARNING! Serving over HTTP, no TLS used!")
+        reactor.listenTCP(int(port), server.Site(CoinSwapCarolJSONServer(wallet)))
     reactor.run()
 
 def main():
@@ -122,9 +149,19 @@ def main():
     cpp.set_session_id()
     cpp.set_tx5_address(tx5address)
     alice = CoinSwapAlice(wallet, 'alicestate', cpp)
-    server, port = options.serverport.split(":")
-    alice_client = CoinSwapJSONRPCClient(server, port,
-                                         alice.sm.tick, alice.backout)
+    scheme, server, port = options.serverport.split(":")
+    print("got this scheme, server, port: ", scheme, server, port)
+    if scheme == "https":
+        usessl = True
+    elif scheme == "http":
+        usessl = False
+    else:
+        print("Invalid server string: ", options.serverport)
+        sys.exit(0)
+    if not server[:2] == "//":
+        print("Invalid server string: ", options.serverport)
+    alice_client = CoinSwapJSONRPCClient(server[2:], port,
+                                         alice.sm.tick, alice.backout, usessl)
     alice.set_jsonrpc_client(alice_client)
     reactor.callWhenRunning(alice.sm.tick)
     reactor.run()
