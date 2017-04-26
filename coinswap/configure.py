@@ -9,7 +9,8 @@ import sys
 from ConfigParser import SafeConfigParser, NoOptionError
 
 import jmbitcoin as btc
-from jmclient import get_p2pk_vbyte, get_p2sh_vbyte, JsonRpc, set_config
+from jmclient import (get_p2pk_vbyte, get_p2sh_vbyte, JsonRpc, set_config,
+                      get_network)
 
 logFormatter = logging.Formatter(
     "%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
@@ -206,38 +207,16 @@ def lookup_appdata_folder():
                                     "." + global_singleton.APPNAME + "/"))
     return data_folder
 
-def get_network():
-    """Returns network name"""
-    return global_singleton.config.get("BLOCKCHAIN", "network")
-
-def validate_address(addr):
-    try:
-        ver = btc.get_version_byte(addr)
-    except AssertionError:
-        return False, 'Checksum wrong. Typo in address?'
-    except Exception:
-        return False, "Invalid bitcoin address"
-    if ver != get_p2pk_vbyte() and ver != get_p2sh_vbyte():
-        return False, 'Wrong address version. Testnet/mainnet confused?'
-    if len(btc.b58check_to_bin(addr)) != 20:
-        return False, "Address has correct checksum but wrong length."
-    return True, 'address validated'
-
-
 def load_coinswap_config(config_path=None, bs=None):
     global_singleton.config.readfp(io.BytesIO(defaultconfig))
     if not config_path:
-        print('no config path, finding')
         global_singleton.homedir = lookup_appdata_folder()
-        print('created config path: ', global_singleton.homedir)
     else:
         global_singleton.homedir = config_path
     if not os.path.exists(global_singleton.homedir):
-        print('making new dir')
         os.makedirs(global_singleton.homedir)
     global_singleton.config_location = os.path.join(
         global_singleton.homedir, global_singleton.config_location)
-    print('set config location to: ', global_singleton.config_location)
     loadedFiles = global_singleton.config.read([global_singleton.config_location
                                                ])
     if len(loadedFiles) != 1:
@@ -254,7 +233,7 @@ def get_blockchain_interface_instance(_config):
     from .blockchaininterface import BitcoinCoreInterface, \
         RegtestBitcoinCoreInterface
     source = _config.get("BLOCKCHAIN", "blockchain_source")
-    network = get_network()
+    network = _config.get("BLOCKCHAIN", "network")
     testnet = network == 'testnet'
     if source == 'bitcoin-rpc': #pragma: no cover
         #This cannot be tested without mainnet or testnet blockchain (not regtest)

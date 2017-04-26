@@ -14,7 +14,7 @@ from jmclient import (get_network, Wallet,
                       encryptData, get_p2pk_vbyte,
                       mn_decode, mn_encode,
                       JsonRpcError, WalletError)
-from coinswap import (cs_single, get_log, get_network,
+from coinswap import (cs_single, get_log,
                       BitcoinCoreInterface, RegtestBitcoinCoreInterface,
                       sync_wallet, load_coinswap_config)
 from jmbase.support import get_password
