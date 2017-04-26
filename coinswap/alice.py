@@ -79,10 +79,16 @@ class CoinSwapAlice(CoinSwapParticipant):
         """The state machine state maps to a specific call in the
         JSON RPC API. The return value is passed to the callback, which
         is the statemachine .tick() function, which passes that return
-        value to the next state transition function.
+        value to the next state transition function. All method calls
+        must be prefaced by the sessionid for distinction of client, other
+        than the handshake which inits the session.
         """
-        return self.jsonrpcclient.send(
-            self.jsonrpcclient.method_names[self.sm.state], *args)
+        mn = self.jsonrpcclient.method_names[self.sm.state]
+        if  mn != "handshake":
+            return self.jsonrpcclient.send(mn,
+                                self.coinswap_parameters.session_id, *args)
+        else:
+            return self.jsonrpcclient.send(mn, *args)
 
     def handshake(self):
         """Record the state of the wallet at the start of the process.
@@ -264,7 +270,9 @@ class CoinSwapAlice(CoinSwapParticipant):
         the rpc call phase2_ready, i.e. they confirm they see them also. 
         """
         self.phase2_loop = task.LoopingCall(self.jsonrpcclient.send_poll,
-                                            "phase2_ready", self.phase2_callback)
+                                            "phase2_ready",
+                                            self.phase2_callback,
+                                            self.coinswap_parameters.session_id)
         self.phase2_loop.start(3.0)
         return (True, "Wait for phase2 loop started")
 
@@ -354,7 +362,9 @@ class CoinSwapAlice(CoinSwapParticipant):
                       "of TX4; this has no effect on us, so we give up.")
             self.tx4_callback("None")
             return
-        self.jsonrpcclient.send_poll("confirm_tx4", self.tx4_callback)
+        self.jsonrpcclient.send_poll("confirm_tx4",
+                                     self.tx4_callback,
+                                     self.coinswap_parameters.session_id)
     
     def tx4_callback(self, result):
         """Once Carol has confirmed receipt of TX4, retrieve

@@ -185,8 +185,15 @@ class CoinSwapCarol(CoinSwapParticipant):
         our_tx2_sig = self.tx2.signatures[0][1]
 
         #**CONSTRUCT TX1**
+        #This call can throw insufficient funds; handled by backout.
+        #But, this should be avoided (see handshake). At least, any
+        #throw here will not cause fees for client.
+        print('wallet used coins is: ', self.wallet.used_coins)
         self.initial_utxo_inputs = self.wallet.select_utxos(0,
-                                    self.coinswap_parameters.tx1_amount)
+                                    self.coinswap_parameters.tx1_amount,
+                                    utxo_filter=self.wallet.used_coins)
+        #Lock these coins; only unlock if there is a pre-funding backout.
+        self.wallet.used_coins.extend(self.initial_utxo_inputs.keys())
         total_in = sum([x['value'] for x in self.initial_utxo_inputs.values()])
         self.signing_privkeys = []
         for i, v in enumerate(self.initial_utxo_inputs.values()):

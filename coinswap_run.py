@@ -69,7 +69,8 @@ def main():
     if isinstance(cs_single().bc_interface, RegtestBitcoinCoreInterface):
         cs_single().bc_interface.grab_coins(wallet.get_new_addr(0, 0), 2.0)
         time.sleep(3)
-    sync_wallet(wallet, fast=options.fastsync)    
+    sync_wallet(wallet, fast=options.fastsync)
+    wallet.used_coins = None
     if options.serve:
         #sanity check that client params were not provided:
         if len(args) > 1:

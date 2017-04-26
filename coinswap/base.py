@@ -778,6 +778,13 @@ class CoinSwapParticipant(object):
         self.phase2_ready = False
         self.tx4_confirmed = False
         self.successful_tx3_redeem = None
+        #Carol must keep track of coins reserved for usage
+        #so as to not select them to spend, twice, concurrently.
+        #We only init with a fresh empty list if this is the first
+        #Carol in the run (so check from program startup setting of None).
+        #Otherwise we would be wiping the existing list.
+        if self.wallet.used_coins is None:
+            self.wallet.used_coins = []
         self.sm = StateMachine(self.state, self.backout,
                                self.get_state_machine_callbacks())
         self.sm.set_finalize(self.finalize)
@@ -911,6 +918,14 @@ class CoinSwapParticipant(object):
             #Alice/Carol may have sent signatures on spend-out transactions
             #but this is irrelevant as long as TX0/1 is not on the network.
             cslog.info("No funds have moved; no action required; ending.")
+            #If Carol is backing out before TX1 broadcast, need to release
+            #the lock on the input coins so they can be used in future runs.
+            if isinstance(self, CoinSwapCarol) and self.tx1:
+                cslog.info("Used coins was: " + str(self.wallet.used_coins))
+                self.wallet.used_coins = [
+            x for x in self.wallet.used_coins if x not in self.tx1.utxo_ins]
+                cslog.info("We unlocked those for this run, it is now: " + \
+                           str(self.wallet.used_coins))
             self.quit(False, False)
             return
         #Handling for later states depends on Alice/Carol

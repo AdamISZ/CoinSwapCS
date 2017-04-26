@@ -53,31 +53,51 @@ class CoinSwapJSONRPCClient(object):
 class CoinSwapCarolJSONServer(jsonrpc.JSONRPC):
     def __init__(self, wallet):
         self.wallet = wallet
+        self.carols = {}
         jsonrpc.JSONRPC.__init__(self)
 
-    def set_carol(self, carol):
-        self.carol = carol
+    def set_carol(self, carol, sessionid):
+        """Once a CoinSwapCarol object has been initiated, its session id
+        has been set, so it can be added to the dict.
+        TODO check for sessionid conflicts here.
+        """
+        self.carols[sessionid] = carol
 
     def jsonrpc_handshake(self, alice_handshake):
+        """The handshake messages initiates the session, so is handled
+        differently from other calls (future anti-DOS features may be
+        added here).
+        """
         #Prepare a new CoinSwapCarol instance for this session
         tx4address = self.wallet.get_new_addr(1, 1)
         cpp = CoinSwapPublicParameters()
         cpp.set_tx4_address(tx4address)
-        self.set_carol(CoinSwapCarol(self.wallet, 'carolstate', cpp))
-        return self.carol.sm.tick_return("handshake", alice_handshake)
+        self.set_carol(CoinSwapCarol(self.wallet, 'carolstate', cpp),
+                                    alice_handshake["session_id"])
+        return self.carols[alice_handshake["session_id"]].sm.tick_return(
+            "handshake", alice_handshake)
+
     def jsonrpc_negotiate(self, *alice_parameter_list):
-        return self.carol.sm.tick_return("negotiate_coinswap_parameters",
-                                         alice_parameter_list)
+        """Receive Alice's half of the public parameters,
+        and return our half if acceptable.
+        """
+        return self.carols[alice_parameter_list[0]].sm.tick_return(
+            "negotiate_coinswap_parameters", alice_parameter_list[1:])
+
     def jsonrpc_tx0id_hx_tx2sig(self, *params):
-        #params must have form: tx0id, hashed_secret, tx2sig
-        return self.carol.sm.tick_return("receive_tx0_hash_tx2sig", *params)
-    def jsonrpc_sigtx3(self, sig):
-        return self.carol.sm.tick_return("receive_tx3_sig", sig)
-    def jsonrpc_phase2_ready(self):
-        return self.carol.is_phase2_ready()
-    def jsonrpc_secret(self, secret):
-        return self.carol.sm.tick_return("receive_secret", secret)
-    def jsonrpc_sigtx4(self, sig, txid5):
-        return self.carol.sm.tick_return("receive_tx4_sig", sig, txid5)
-    def jsonrpc_confirm_tx4(self):
-        return self.carol.is_tx4_confirmed()
+        return self.carols[params[0]].sm.tick_return("receive_tx0_hash_tx2sig",
+                                                    *params[1:])
+    def jsonrpc_sigtx3(self, sessionid, sig):
+        return self.carols[sessionid].sm.tick_return("receive_tx3_sig", sig)
+
+    def jsonrpc_phase2_ready(self, sessionid):
+        return self.carols[sessionid].is_phase2_ready()
+
+    def jsonrpc_secret(self, sessionid, secret):
+        return self.carols[sessionid].sm.tick_return("receive_secret", secret)
+
+    def jsonrpc_sigtx4(self, sessionid, sig, txid5):
+        return self.carols[sessionid].sm.tick_return("receive_tx4_sig", sig, txid5)
+
+    def jsonrpc_confirm_tx4(self, sessionid):
+        return self.carols[sessionid].is_tx4_confirmed()
