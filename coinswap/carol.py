@@ -82,7 +82,7 @@ class CoinSwapCarol(CoinSwapParticipant):
         are acceptable.
         """
         self.set_handshake_parameters()
-        self.bbmb = self.wallet.get_balance_by_mixdepth()
+        self.bbmb = self.wallet.get_balance_by_mixdepth(verbose=False)
         if d["coinswapcs_version"] != cs_single().CSCS_VERSION:
             return (False, "wrong CoinSwapCS version, was: " + \
                     str(d["coinswapcs_version"]) + ", should be: " + \

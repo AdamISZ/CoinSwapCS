@@ -1168,7 +1168,7 @@ class CoinSwapParticipant(object):
         from .alice import CoinSwapAlice
         from .carol import CoinSwapCarol
         sync_wallet(self.wallet)
-        self.bbma = self.wallet.get_balance_by_mixdepth()
+        self.bbma = self.wallet.get_balance_by_mixdepth(verbose=False)
         cslog.info("Wallet before: ")
         cslog.info(pformat(self.bbmb))
         cslog.info("Wallet after: ")

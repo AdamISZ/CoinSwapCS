@@ -31,7 +31,7 @@ def main_server(options, wallet):
     if options.recover:
         session_id = options.recover
         carol = CoinSwapCarol(wallet, 'carolstate')
-        carol.bbmb = wallet.get_balance_by_mixdepth()
+        carol.bbmb = wallet.get_balance_by_mixdepth(verbose=False)
         carol.load(sessionid=session_id)
         carol.backout("Recovering from shutdown")
         reactor.run()
@@ -100,7 +100,7 @@ def main():
     if options.recover:
         session_id = options.recover
         alice = CoinSwapAlice(wallet, 'alicestate')
-        alice.bbmb = wallet.get_balance_by_mixdepth()
+        alice.bbmb = wallet.get_balance_by_mixdepth(verbose=False)
         alice.load(sessionid=session_id)
         alice.backout("Recovering from shutdown")
         reactor.run()

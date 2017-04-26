@@ -89,7 +89,7 @@ class CoinSwapAlice(CoinSwapParticipant):
         Send a handshake message to Carol with required parameters for
         this Coinswap.
         """
-        self.bbmb = self.wallet.get_balance_by_mixdepth()
+        self.bbmb = self.wallet.get_balance_by_mixdepth(verbose=False)
         to_send = {"coinswapcs_version": cs_single().CSCS_VERSION,
                    "session_id": self.coinswap_parameters.session_id,
                    "tx01_confirm_wait": cs_single().config.getint("TIMEOUT",
