@@ -42,7 +42,11 @@ def get_ssl_context():
     return ssl.DefaultOpenSSLContextFactory(pkcdata["ssl_private_key_location"],
                                             pkcdata["ssl_certificate_location"])
 
-def main_server(options, wallet):
+def main_server(options, wallet, test_data=None):
+    """The use_ssl option is only for tests, and flags that case.
+    """
+    if test_data and not test_data['use_ssl']:
+        cs_single().config.set("SERVER", "use_ssl", "false")
     #to allow testing of confirm/unconfirm callback for multiple txs
     if isinstance(cs_single().bc_interface, RegtestBitcoinCoreInterface):
         cs_single().bc_interface.tick_forward_chain_interval = 2
@@ -67,16 +71,20 @@ def main_server(options, wallet):
     else:
         cslog.info("WARNING! Serving over HTTP, no TLS used!")
         reactor.listenTCP(int(port), server.Site(CoinSwapCarolJSONServer(wallet)))
-    reactor.run()
+    if not test_data:
+        reactor.run()
 
-def main():
+def main_cs(test_data=None):
     #twisted logging (TODO disable for non-debug runs)
-    log.startLogging(sys.stdout)
-    #Joinmarket wallet
-    parser = get_coinswap_parser()
-    (options, args) = parser.parse_args()
-    load_coinswap_config()
-    wallet_name = args[0]
+    if test_data:
+        wallet_name, args, options, use_ssl = test_data
+    else:
+        log.startLogging(sys.stdout)
+        #Joinmarket wallet
+        parser = get_coinswap_parser()
+        (options, args) = parser.parse_args()
+        load_coinswap_config()
+        wallet_name = args[0]
     #depth 0: spend in, depth 1: receive out, depth 2: for backout transactions.
     max_mix_depth = 3
     if not os.path.exists(os.path.join('wallets', wallet_name)):
@@ -93,8 +101,9 @@ def main():
                 print("Failed to load wallet, error message: " + repr(e))
                 sys.exit(0)
             break
-    #for testing, need funds.
-    if isinstance(cs_single().bc_interface, RegtestBitcoinCoreInterface):
+    #for testing main script (not test framework), need funds.
+    if not test_data and isinstance(
+        cs_single().bc_interface, RegtestBitcoinCoreInterface):
         cs_single().bc_interface.grab_coins(wallet.get_new_addr(0, 0), 2.0)
         time.sleep(3)
     sync_wallet(wallet, fast=options.fastsync)
@@ -105,7 +114,10 @@ def main():
             print("Extra parameters provided for running as server. "
                   "Are you sure you didn't want to run as client?")
             sys.exit(0)
-        main_server(options, wallet)
+        if not test_data:
+            main_server(options, wallet)
+        else:
+            main_server(options, wallet, {'use_ssl': use_ssl})
         return
     tx01_amount = int(args[1])
     #Reset the targetting for backout transactions
@@ -165,7 +177,8 @@ def main():
                                          alice.sm.tick, alice.backout, usessl)
     alice.set_jsonrpc_client(alice_client)
     reactor.callWhenRunning(alice.sm.tick)
-    reactor.run()
+    if not test_data:
+        reactor.run()
 
 if __name__ == "__main__":
-    main()
+    main_cs()
