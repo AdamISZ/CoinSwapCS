@@ -17,7 +17,7 @@ import abc
 import sys
 from pprint import pformat
 import json
-from coinswap import (CoinSwapException, CoinSwapPublicParameters,
+from coinswapcs import (CoinSwapException, CoinSwapPublicParameters,
                       CoinSwapParticipant, CoinSwapTX, CoinSwapTX01,
                       CoinSwapTX23, CoinSwapTX45, CoinSwapRedeemTX23Secret,
                       CoinSwapRedeemTX23Timeout, COINSWAP_SECRET_ENTROPY_BYTES,

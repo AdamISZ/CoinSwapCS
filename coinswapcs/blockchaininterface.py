@@ -23,7 +23,7 @@ from jmclient.jsonrpc import JsonRpcConnectionError, JsonRpcError
 from jmclient.configure import get_p2pk_vbyte, get_p2sh_vbyte
 from jmbase.support import chunks
 
-from coinswap import cs_single, get_log
+from coinswapcs import cs_single, get_log
 
 cslog = get_log()
 

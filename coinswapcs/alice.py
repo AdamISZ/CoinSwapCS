@@ -21,7 +21,7 @@ from .base import (CoinSwapException, CoinSwapPublicParameters,
                       get_coinswap_secret, get_current_blockheight,
                       create_hash_script, get_secret_from_vin,
                       generate_escrow_redeem_script)
-from coinswap import cs_single
+from coinswapcs import cs_single
 
 cslog = get_log()
 

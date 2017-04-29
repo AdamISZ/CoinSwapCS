@@ -2,7 +2,7 @@
 from __future__ import print_function
 import jmbitcoin as btc
 from jmclient import Wallet, estimate_tx_fee, validate_address
-from coinswap import (cs_single, CoinSwapPublicParameters, CoinSwapAlice,
+from coinswapcs import (cs_single, CoinSwapPublicParameters, CoinSwapAlice,
                       CoinSwapCarol, CoinSwapJSONRPCClient, sync_wallet,
                       get_current_blockheight, RegtestBitcoinCoreInterface,
                       BitcoinCoreInterface, get_log, load_coinswap_config,
