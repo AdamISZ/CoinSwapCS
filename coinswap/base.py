@@ -172,6 +172,9 @@ class StateMachine(object):
         self.num_states = len(callbackdata)
         self.init_state = init_state
         self.state = init_state
+        #this is set to True to indicate that further processing
+        #is not allowed (when backing out)
+        self.freeze = False
         self.default_timeout = float(cs_single().config.get("TIMEOUT",
                                                     "default_network_timeout"))
         #by default no pre- or post- processing
@@ -191,15 +194,24 @@ class StateMachine(object):
                 self.timeouts.append(self.default_timeout)
 
     def stallMonitor(self, state):
-        if state < self.state:
+        if state < self.state or self.state == len(self.callbacks):
             return
-        self.backout_callback('state transition timed out; backing out')
+        if not self.freeze:
+            self.backout_callback('state transition timed out; backing out')
+        self.freeze = True
 
     def tick_return(self, *args):
         """Must pass the callback name as the first argument;
         returns the return value from the first non-auto-continue
         callback.
         """
+        if self.freeze:
+            cslog.info("State machine is shut down, no longer receiving updates")
+            return True
+        cslog.info("starting server tick function, state is: " + str(self.state))
+        if self.state == len(self.callbacks):
+            cslog.info("State machine has completed.")
+            return True
         requested_callback = args[0]
         args = args[1:]
         if requested_callback != self.callbacks[self.state].__name__:
@@ -214,6 +226,9 @@ class StateMachine(object):
         if not retval:
             cslog.info("Execution failed at step after: " + str(self.state) + \
                   ", backing out.")
+            #state machine must lock and prevent update from counterparty
+            #at point of backout.
+            self.freeze = True
             reactor.callLater(0, self.backout_callback, msg)
             return False
         if self.finalize:
@@ -237,10 +252,13 @@ class StateMachine(object):
         Calls backout_callback on failure, to allow
         the caller to execute backout conditional on state.
         """
+        if self.freeze:
+            cslog.info("State machine is shut down, no longer receiving updates")
+            return
         if self.state == len(self.callbacks):
             cslog.info("State machine has completed.")
             return
-        cslog.info('starting tick function, state is: ' + str(self.state))
+        cslog.info("starting client tick function, state is: " + str(self.state))
         if self.setup:
             self.setup()
         if not args:
@@ -251,6 +269,9 @@ class StateMachine(object):
             cslog.info("Execution failed at step after: " + str(self.state) + \
                   ", backing out.")
             cslog.info("Error message: " + msg)
+            #state machine must lock and prevent update from counterparty
+            #at point of backout.
+            self.freeze = True
             reactor.callLater(0, self.backout_callback, msg)
             return False
         if self.finalize:
@@ -747,7 +768,8 @@ class CoinSwapRedeemTX23Timeout(CoinSwapTX):
 class CoinSwapParticipant(object):
     __metaclass__ = abc.ABCMeta
 
-    def __init__(self, wallet, state_file, cpp=None): 
+    def __init__(self, wallet, state_file, cpp=None, testing_mode=False):
+        self.testing_mode = testing_mode
         self.coinswap_parameters = cpp
         if self.coinswap_parameters:
             assert isinstance(self.coinswap_parameters, CoinSwapPublicParameters)
@@ -904,7 +926,8 @@ class CoinSwapParticipant(object):
         point is relevant for testing only currently.
         """
         cslog.info('BACKOUT: ' + backoutmsg)
-        cslog.info("Current state: " + str(self.sm.state))
+        me = "Alice" if isinstance(self, CoinSwapAlice) else "Carol"
+        cslog.info("Current state: " + str(self.sm.state) + ", I am : " + me)
         if self.sm.state == 0:
             #Failure in negotiation; nothing to do
             cslog.info("Failure in parameter negotiation; no action required; "
@@ -1224,12 +1247,22 @@ class CoinSwapParticipant(object):
                     report_msg += ["To address: " + t.output_address]
 
         cslog.info("\n" + "\n".join(report_msg))
-        #Reactor stop must be deferred until after the report is complete.
-        #Carol (server) must not shutdown unless there was a failure; in which
-        #case it's prudent to shutdown, as this is a serious failure.
-        if isinstance(self, CoinSwapAlice) or (
-            isinstance(self, CoinSwapCarol) and failed == True):
-            reactor.stop()
+
+        if self.testing_mode:
+            #In testing mode the order of finishing of Alice/Carol depends
+            #on scenario; this uses a dumb global check to always finish on
+            #the second try
+            if cs_single().num_entities_running == 1:
+                reactor.stop()
+            else:
+                cs_single().num_entities_running += 1
+        else:
+            #Reactor stop must be deferred until after the report is complete.
+            #Carol (server) must not shutdown unless there was a failure; in which
+            #case it's prudent to shutdown, as this is a serious failure.
+            if isinstance(self, CoinSwapAlice) or (
+                isinstance(self, CoinSwapCarol) and failed == True):
+                reactor.stop()
 
     @abc.abstractmethod
     def negotiate_coinswap_parameters(self):

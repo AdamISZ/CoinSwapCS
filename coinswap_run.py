@@ -65,12 +65,14 @@ def main_server(options, wallet, test_data=None):
         return
     #TODO currently ignores server setting here and uses localhost
     port = cs_single().config.getint("SERVER", "port")
+    testing_mode = True if test_data else False
     if cs_single().config.get("SERVER", "use_ssl") != "false":
-        reactor.listenSSL(int(port), server.Site(CoinSwapCarolJSONServer(wallet)),
-                      contextFactory = get_ssl_context())
+        reactor.listenSSL(int(port), server.Site(CoinSwapCarolJSONServer(wallet,
+                testing_mode=testing_mode)), contextFactory = get_ssl_context())
     else:
         cslog.info("WARNING! Serving over HTTP, no TLS used!")
-        reactor.listenTCP(int(port), server.Site(CoinSwapCarolJSONServer(wallet)))
+        reactor.listenTCP(int(port), server.Site(CoinSwapCarolJSONServer(wallet,
+                                                    testing_mode=testing_mode)))
     if not test_data:
         reactor.run()
 
@@ -161,7 +163,8 @@ def main_cs(test_data=None):
     #Alice must set the unique identifier for this run.
     cpp.set_session_id()
     cpp.set_tx5_address(tx5address)
-    alice = CoinSwapAlice(wallet, 'alicestate', cpp)
+    testing_mode = True if test_data else False
+    alice = CoinSwapAlice(wallet, 'alicestate', cpp, testing_mode=testing_mode)
     scheme, server, port = options.serverport.split(":")
     print("got this scheme, server, port: ", scheme, server, port)
     if scheme == "https":

@@ -72,3 +72,4 @@ def test_run_both(setup_wallets, num_alices, wallet_structures, amounts,
 def setup_wallets():
     log.startLogging(sys.stdout)    
     load_coinswap_config()
+    cs_single().num_entities_running = 0
