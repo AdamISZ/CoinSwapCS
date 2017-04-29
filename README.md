@@ -38,7 +38,7 @@ If you want more info about the general ideas without delving into code, jump to
 ### Coinswap details
 
 The original proposal contains a flaw; I have written up a brief description of
-my own proposed fix [here](https://gist.github.com/AdamISZ/350bb4038834019eb0c06ec69446aec9),
+my own proposed fix [here](docs/coinswap_tweak.md),
 and it's this version of the protocol that's implemented in this code. I would
 welcome further peer review on this; there may be other tweaks possible to the
 basic arrangement.
@@ -169,37 +169,10 @@ but that won't help if there's a power outage, for example.
 
 It goes without saying that help with this would be appreciated!
 
- * Test suite
- 
- So far a lot of manual testing, but a high priority is to create a test suite
- that tests each of the many backout paths/scenarios. Something like this is
- absolutely required before even an ultra-alpha release.
+Using this repo's Issues list to track this.
 
- * Make server always-on
- 
-  Currently a very braindead "once and done" codebase, will shut down (usually)
-  on completion of a coinswap protocol run, and won't handle backouts without
-  manual intervention. This isn't much of a server! Assuming crashes cannot be
-  injected, the backouts are handled within the code, but supporting multiple
-  transactions both in serial, and, ideally, in parallel, should be an immediate
-  goal.
- 
- * Address malleability risk
- 
- There are potential risks around malleability of TX2/3 and the redeem from them,
- in particular in the backout case where Carol doesn't receive the secret. This
- should be addressed in the customised `blockchaininterface.py` module (which is
- adapted from that in Joinmarket).
- 
- * Support TLS and socks connections.
- 
- Obviously TLS is required, but it should be fairly easy, I've done it before in
- Twisted (however, the certs can be a bit of a pain). Supporting serving as a Tor
- Hidden Service and clients connecting over Tor with socks proxies is slightly
- more work, although I think the client side isn't too hard (done it before I think).
-
-These are just a few high-level/high-priority issues to be addressed. I will add
-more issues to the Issues list in this repo.
+You can find a list of [features](https://github.com/AdamISZ/CoinSwapCS/issues?q=is%3Aopen+is%3Aissue+label%3Aenhancement)
+that are needed and [bugs](https://github.com/AdamISZ/CoinSwapCS/issues?q=is%3Aopen+is%3Aissue+label%3Abug) to fix.
 
 ### Background
 
