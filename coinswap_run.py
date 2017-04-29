@@ -79,7 +79,7 @@ def main_server(options, wallet, test_data=None):
 def main_cs(test_data=None):
     #twisted logging (TODO disable for non-debug runs)
     if test_data:
-        wallet_name, args, options, use_ssl = test_data
+        wallet_name, args, options, use_ssl, alt_class = test_data
     else:
         log.startLogging(sys.stdout)
         #Joinmarket wallet
@@ -120,6 +120,7 @@ def main_cs(test_data=None):
             main_server(options, wallet)
         else:
             main_server(options, wallet, {'use_ssl': use_ssl})
+            return wallet.get_balance_by_mixdepth()
         return
     tx01_amount = int(args[1])
     #Reset the targetting for backout transactions
@@ -164,7 +165,8 @@ def main_cs(test_data=None):
     cpp.set_session_id()
     cpp.set_tx5_address(tx5address)
     testing_mode = True if test_data else False
-    alice = CoinSwapAlice(wallet, 'alicestate', cpp, testing_mode=testing_mode)
+    aliceclass = alt_class if test_data and alt_class else CoinSwapAlice
+    alice = aliceclass(wallet, 'alicestate', cpp, testing_mode=testing_mode)
     scheme, server, port = options.serverport.split(":")
     print("got this scheme, server, port: ", scheme, server, port)
     if scheme == "https":
@@ -182,6 +184,8 @@ def main_cs(test_data=None):
     reactor.callWhenRunning(alice.sm.tick)
     if not test_data:
         reactor.run()
+    if test_data:
+        return alice
 
 if __name__ == "__main__":
     main_cs()

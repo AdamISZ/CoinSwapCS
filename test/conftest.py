@@ -48,6 +48,15 @@ def pytest_addoption(parser):
                      action="store",
                      default='bitcoinrpc',
                      help="the RPC username for your test bitcoin instance (default=bitcoinrpc)")
+    parser.addoption("--runtype",
+                     action="store",
+                     default="",
+                     help="Mode of test, can be one of: cooperative,")
+
+def pytest_generate_tests(metafunc):
+    option_value = metafunc.config.option.runtype
+    if "runtype" in metafunc.fixturenames and option_value is not None:
+        metafunc.parametrize("runtype", [option_value])
 
 def teardown():
     #shut down bitcoin and remove the regtest dir
