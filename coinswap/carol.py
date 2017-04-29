@@ -7,7 +7,6 @@ from txjsonrpc.web import jsonrpc
 from twisted.web import server
 from .btscript import *
 from .configure import get_log
-import pytest
 from decimal import Decimal
 import binascii
 import time

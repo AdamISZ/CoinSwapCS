@@ -125,10 +125,11 @@ The instructions are:
     git clone https://github.com/AdamISZ/joinmarket-clientserver
     cd joinmarket-clientserver
     python setupall.py --client-bitcoin
+    cd ..
 
 Then you need this repo
 
-    git clone https://github.com/AdamISZ/CoinSwapCS
+    git clone https://github.com/AdamISZ/CoinSwapCS; cd CoinSwapCS
     python setup.py install
 
 To connect to a server you'll then need its hostname and port, then start with

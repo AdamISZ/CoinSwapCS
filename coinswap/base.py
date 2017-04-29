@@ -8,7 +8,6 @@ from twisted.web import server
 import BaseHTTPServer
 from .btscript import *
 from .configure import get_log, cs_single
-import pytest
 from decimal import Decimal
 import binascii
 import time

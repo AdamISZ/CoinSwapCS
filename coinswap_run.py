@@ -1,7 +1,8 @@
 #!/home/adam/virtualenvs/escrow/bin/python
 from __future__ import print_function
 import jmbitcoin as btc
-from jmclient import Wallet, estimate_tx_fee, validate_address
+from jmclient import Wallet, WalletError, estimate_tx_fee, validate_address
+from jmbase.support import get_password
 from coinswap import (cs_single, CoinSwapPublicParameters, CoinSwapAlice,
                       CoinSwapCarol, CoinSwapJSONRPCClient, sync_wallet,
                       get_current_blockheight, RegtestBitcoinCoreInterface,
