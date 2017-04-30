@@ -5,7 +5,6 @@ from twisted.internet import reactor, task
 from txjsonrpc.web.jsonrpc import Proxy
 from txjsonrpc.web import jsonrpc
 from twisted.web import server
-import BaseHTTPServer
 from .btscript import *
 from .configure import get_log, cs_single
 from decimal import Decimal
@@ -17,12 +16,8 @@ import abc
 import sys
 from pprint import pformat
 import json
-import inspect
-#from .alice import CoinSwapAlice
-#from .carol import CoinSwapCarol
 
 COINSWAP_SECRET_ENTROPY_BYTES = 14
-CSCS_VERSION = 0.1
 
 cslog = get_log()
 
@@ -103,7 +98,7 @@ def msig_data_from_pubkeys(pubkeys, N):
 
 def get_coinswap_secret(raw_secret=None):
     """Create a preimage of defined entropy and return
-    the preimage and hash image, both as byte strings.
+    the preimage and hash image, both as hex strings.
     Optionally pass in the raw secret, in hex form.
     """
     if not raw_secret:
@@ -115,9 +110,9 @@ def get_coinswap_secret(raw_secret=None):
     return (binascii.hexlify(raw_secret), binascii.hexlify(hashed_secret))
 
 def get_secret_from_vin(vins, hashed_secret):
-    """Takes a vin array as returned by json rpc getrawtransaction 1,
-    and extract the secret assuming at least one of the inputs was
-    spending from the custom redeem script.
+    """Takes a vin array as returned by jmbitcoin serialization,
+    and extract the secret if at least one of the inputs was
+    spending from the custom redeem script; otherwise return None
     """
     #extract scriptSig raw hex
     for vin in vins:
@@ -194,6 +189,9 @@ class StateMachine(object):
                 self.timeouts.append(self.default_timeout)
 
     def stallMonitor(self, state):
+        """Wakes up a set timeout after state transition callback
+        was called; if state has not been incremented, we backout.
+        """
         if state < self.state or self.state == len(self.callbacks):
             return
         if not self.freeze:

@@ -137,8 +137,8 @@ def main_cs(test_data=None):
     if isinstance(cs_single().bc_interface, RegtestBitcoinCoreInterface):
         cs_single().bc_interface.tick_forward_chain_interval = 2
         cs_single().bc_interface.simulating = True
-        cs_single().config.set("BLOCKCHAIN", "notify_port", "62653")
-        cs_single().config.set("BLOCKCHAIN", "rpc_host", "127.3.0.2")
+        cs_single().config.set("BLOCKCHAIN", "notify_port", "62652")
+        cs_single().config.set("BLOCKCHAIN", "rpc_host", "127.0.0.2")
     
     #if restart option selected, read state and backout
     if options.recover:

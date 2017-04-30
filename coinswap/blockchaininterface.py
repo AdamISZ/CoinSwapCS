@@ -205,13 +205,13 @@ class NotifyRequestHeader(BaseHTTPServer.BaseHTTPRequestHandler):
             cslog.debug(
                 'ERROR: This is not a handled URL path.  You may want to check your notify URL for typos.')
 
-        #request = urllib2.Request('http://localhost:' + str(
-        #    self.base_server.server_address[1] + 1) + self.path)
-        #request.get_method = lambda: 'HEAD'
-        #try:
-        #    urllib2.urlopen(request)
-        #except urllib2.URLError:
-        #    pass
+        request = urllib2.Request('http://localhost:' + str(
+            self.base_server.server_address[1] + 1) + self.path)
+        request.get_method = lambda: 'HEAD'
+        try:
+            urllib2.urlopen(request)
+        except urllib2.URLError:
+            pass
         self.send_response(200)
         # self.send_header('Connection', 'close')
         self.end_headers()

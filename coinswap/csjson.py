@@ -102,9 +102,12 @@ class CoinSwapCarolJSONServer(jsonrpc.JSONRPC):
         tx4address = self.wallet.get_new_addr(1, 1)
         cpp = CoinSwapPublicParameters()
         cpp.set_tx4_address(tx4address)
-        if not self.set_carol(CoinSwapCarol(self.wallet, 'carolstate', cpp,
-                                            testing_mode=self.testing_mode),
-                                    alice_handshake["session_id"]):
+        try:
+            if not self.set_carol(CoinSwapCarol(self.wallet, 'carolstate', cpp,
+                                                testing_mode=self.testing_mode),
+                                        alice_handshake["session_id"]):
+                return False
+        except:
             return False
         return self.carols[alice_handshake["session_id"]].sm.tick_return(
             "handshake", alice_handshake)

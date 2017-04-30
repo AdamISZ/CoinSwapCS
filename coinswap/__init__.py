@@ -1,5 +1,5 @@
 from .btscript import *
-from .base import (CSCS_VERSION, CoinSwapException, CoinSwapPublicParameters,
+from .base import (CoinSwapException, CoinSwapPublicParameters,
                       CoinSwapParticipant, CoinSwapTX, CoinSwapTX01,
                       CoinSwapTX23, CoinSwapTX45, CoinSwapRedeemTX23Secret,
                       CoinSwapRedeemTX23Timeout, COINSWAP_SECRET_ENTROPY_BYTES,
