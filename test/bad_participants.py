@@ -3,6 +3,8 @@ from coinswap import CoinSwapAlice, CoinSwapCarol, get_log, get_coinswap_secret
 
 cslog = get_log()
 
+"""**MALICIOUS ALICE CLASSES**
+"""
 class AliceBadHandshake(CoinSwapAlice):
     """This class will not even trigger the correct instantiation
     of a CoinSwapCarol object, so a hack is needed to trigger test ending,
@@ -70,3 +72,40 @@ class AliceWrongSecret(CoinSwapAlice):
 class AliceFailReceiveTX5Sig(CoinSwapAlice):
     def receive_tx5_sig(self, sig):
         raise ValueError("Supposedly failed to receive TX5 sig")
+
+
+"""**MALICIOUS CAROL CLASSES**
+"""
+class CarolBadHandshake(CoinSwapCarol):
+    def handshake(self, d):
+        self.bbmb = self.wallet.get_balance_by_mixdepth(verbose=False)
+        return (False, "Test rejection")
+
+class CarolBadNegotiate(CoinSwapCarol):
+    def negotiate_coinswap_parameters(self, params):
+        to_send = ["foo", "bar"]
+        return (to_send, "Fake OK")
+
+class CarolFailSendTX1id(CoinSwapCarol):
+    def send_tx1id_tx2_sig_tx3_sig(self):
+        return (["foo", "bar", "baz"], "Supposedly sent TX1id etc")
+
+class CarolFailReceiveTX3Sig(CoinSwapCarol):
+    def receive_tx3_sig(self, sig):
+        raise ValueError("Supposedly failed to receive TX3 sig")
+
+class CarolNoBrTX1(CoinSwapCarol):
+    def push_tx1(self):
+        return (False, "Pretend we couldn't broadcast TX1")
+
+class CarolFailReceiveSecret(CoinSwapCarol):
+    def receive_secret(self, secret):
+        raise ValueError("Supposedly failed to receive secret")
+
+class CarolBadSendTX5Sig(CoinSwapCarol):
+    def send_tx5_sig(self):
+        return ("deadbeef", "Sending invalid TX5 sig")
+
+class CarolFailReceiveTX4Sig(CoinSwapCarol):
+    def receive_tx4_sig(self, sig, txid5):
+        raise ValueError("Supposedly failed to receive TX4 sig")

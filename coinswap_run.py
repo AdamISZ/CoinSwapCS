@@ -66,20 +66,24 @@ def main_server(options, wallet, test_data=None):
     #TODO currently ignores server setting here and uses localhost
     port = cs_single().config.getint("SERVER", "port")
     testing_mode = True if test_data else False
+    carol_class = test_data['alt_c_class'] if test_data and \
+        test_data['alt_c_class'] else CoinSwapCarol
     if cs_single().config.get("SERVER", "use_ssl") != "false":
         reactor.listenSSL(int(port), server.Site(CoinSwapCarolJSONServer(wallet,
-                testing_mode=testing_mode)), contextFactory = get_ssl_context())
+                testing_mode=testing_mode, carol_class=carol_class)),
+                          contextFactory = get_ssl_context())
     else:
         cslog.info("WARNING! Serving over HTTP, no TLS used!")
         reactor.listenTCP(int(port), server.Site(CoinSwapCarolJSONServer(wallet,
-                                                    testing_mode=testing_mode)))
+                                                    testing_mode=testing_mode,
+                                                    carol_class=carol_class)))
     if not test_data:
         reactor.run()
 
 def main_cs(test_data=None):
     #twisted logging (TODO disable for non-debug runs)
     if test_data:
-        wallet_name, args, options, use_ssl, alt_class = test_data
+        wallet_name, args, options, use_ssl, alt_class, alt_c_class = test_data
     else:
         log.startLogging(sys.stdout)
         #Joinmarket wallet
@@ -119,7 +123,8 @@ def main_cs(test_data=None):
         if not test_data:
             main_server(options, wallet)
         else:
-            main_server(options, wallet, {'use_ssl': use_ssl})
+            main_server(options, wallet, {'use_ssl': use_ssl,
+                                          'alt_c_class': alt_c_class})
             return wallet.get_balance_by_mixdepth()
         return
     tx01_amount = int(args[1])

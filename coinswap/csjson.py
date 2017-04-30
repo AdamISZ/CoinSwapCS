@@ -79,9 +79,10 @@ class CoinSwapJSONRPCClient(object):
         d.addCallback(self.json_callback).addErrback(self.error)
 
 class CoinSwapCarolJSONServer(jsonrpc.JSONRPC):
-    def __init__(self, wallet, testing_mode=False):
+    def __init__(self, wallet, testing_mode=False, carol_class=CoinSwapCarol):
         self.testing_mode = testing_mode
         self.wallet = wallet
+        self.carol_class = carol_class
         self.carols = {}
         jsonrpc.JSONRPC.__init__(self)
 
@@ -103,7 +104,7 @@ class CoinSwapCarolJSONServer(jsonrpc.JSONRPC):
         cpp = CoinSwapPublicParameters()
         cpp.set_tx4_address(tx4address)
         try:
-            if not self.set_carol(CoinSwapCarol(self.wallet, 'carolstate', cpp,
+            if not self.set_carol(self.carol_class(self.wallet, 'carolstate', cpp,
                                                 testing_mode=self.testing_mode),
                                         alice_handshake["session_id"]):
                 return False

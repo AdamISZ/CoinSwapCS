@@ -12,7 +12,11 @@ from bad_participants import (AliceBadHandshake, AliceWrongSecret,
                               AliceBadNegotiate, AliceBadCompleteNegotiation,
                               AliceFailSendTX0id, AliceFailReceiveTX1id,
                               AliceBadTX3Sig, AliceNoBrTX0, AliceBadTX01Monitor,
-                              AliceFailReceiveTX5Sig)
+                              AliceFailReceiveTX5Sig,
+                              CarolBadHandshake, CarolBadNegotiate,
+                              CarolFailSendTX1id, CarolFailReceiveTX3Sig,
+                              CarolNoBrTX1, CarolFailReceiveSecret,
+                              CarolBadSendTX5Sig, CarolFailReceiveTX4Sig)
 
 from twisted.internet import reactor, task
 from twisted.python import log
@@ -34,11 +38,23 @@ alice_classes = {"cooperative": None,
                  "notx01monitor": AliceBadTX01Monitor,
                  "badreceivetx5sig": AliceFailReceiveTX5Sig}
 
+carol_classes = {"cbadhandshake": CarolBadHandshake,
+                 "cbadnegotiate": CarolBadNegotiate,
+                 "cbadsendtx1id": CarolFailSendTX1id,
+                 "cbadreceivetx3sig": CarolFailReceiveTX3Sig,
+                 "cnobroadcasttx1": CarolNoBrTX1,
+                 "cbadreceivesecret": CarolFailReceiveSecret,
+                 "cbadsendtx5sig": CarolBadSendTX5Sig,
+                 "cbadreceivetx4sig": CarolFailReceiveTX4Sig}
+
 alice_funds_not_moved_cases = ["badhandshake", "badncs", "badcompleten",
                                "badsendtx0id", "badreceivetx1id",
-                               "nobroadcasttx0"]
+                               "nobroadcasttx0",
+                               "cbadhandshake", "cbadnegotiate", "cbadsendtx1id"]
 
-carol_funds_not_moved_cases = alice_funds_not_moved_cases + ["badsendtx3sig"]
+carol_funds_not_moved_cases = alice_funds_not_moved_cases + ["badsendtx3sig",
+                                                             "cbadreceivetx3sig",
+                                                             "cnobroadcasttx1"]
 
 """parametrize is not allowed with injected config vars from command line;
 also, multiple runs of the reactor is not supported. So, we just statically
@@ -66,14 +82,14 @@ def miner():
 def start_mining(l):
     l.start(4.0)
 
-def runcase(alice_class):
+def runcase(alice_class, carol_class):
     options_server = Options()
     wallets = make_wallets(num_alices + 1,
                                wallet_structures=wallet_structures,
                                mean_amt=funding_amount)
     args_server = ["dummy"]
     test_data_server = (wallets[num_alices]['seed'], args_server, options_server,
-                        False, None)
+                        False, None, carol_class)
     carol_bbmb = main_cs(test_data_server)
     options_alice = Options()
     options_alice.serve = False
@@ -83,7 +99,7 @@ def runcase(alice_class):
         if dest_addr:
             args_alice.append(dest_addr)
         test_data_alice = (wallets[i]['seed'], args_alice, options_alice, False,
-                           alice_class)
+                           alice_class, None)
         alices.append(main_cs(test_data_alice))
     l = task.LoopingCall(miner)
     reactor.callWhenRunning(start_mining, l)
@@ -103,7 +119,9 @@ def test_run_both(setup_wallets, runtype):
         cs_single().num_entities_running = 1
     #The setup of each test case is the same; the only difference is the
     #participant classes (only Alice for now)
-    alices, carol_bbmb, carol_wallet = runcase(alice_classes[runtype])
+    ac = alice_classes[runtype] if runtype in alice_classes else None
+    cc = carol_classes[runtype] if runtype in carol_classes else None
+    alices, carol_bbmb, carol_wallet = runcase(ac, cc)
     #test case function will only return on reactor shutdown; Alice and Carol
     #objects are set at the start, but are references so updated.
     #Check the wallet states reflect the expected updates.
