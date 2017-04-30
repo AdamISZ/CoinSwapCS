@@ -15,6 +15,8 @@ A simple implementation of CoinSwap with Carol as server and Alice as client.
 
 [What needs doing](#todo-list)
 
+[Testing](#testing)
+
 [More background on the ideas](#background)
 
 ### Coinswap basics
@@ -175,6 +177,9 @@ Using this repo's Issues list to track this.
 You can find a list of [features](https://github.com/AdamISZ/CoinSwapCS/issues?q=is%3Aopen+is%3Aissue+label%3Aenhancement)
 that are needed and [bugs](https://github.com/AdamISZ/CoinSwapCS/issues?q=is%3Aopen+is%3Aissue+label%3Abug) to fix.
 
+### Testing
+
+The instructions on how to test are in the [test README](test/)
 ### Background
 
 Some background motivation might be in order here: this project is part of the
