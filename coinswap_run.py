@@ -70,20 +70,22 @@ def main_server(options, wallet, test_data=None):
         test_data['alt_c_class'] else CoinSwapCarol
     if cs_single().config.get("SERVER", "use_ssl") != "false":
         reactor.listenSSL(int(port), server.Site(CoinSwapCarolJSONServer(wallet,
-                testing_mode=testing_mode, carol_class=carol_class)),
+                testing_mode=testing_mode, carol_class=carol_class,
+                fail_carol_state=test_data["fail_carol_state"])),
                           contextFactory = get_ssl_context())
     else:
         cslog.info("WARNING! Serving over HTTP, no TLS used!")
         reactor.listenTCP(int(port), server.Site(CoinSwapCarolJSONServer(wallet,
                                                     testing_mode=testing_mode,
-                                                    carol_class=carol_class)))
+                                                    carol_class=carol_class,
+                                fail_carol_state=test_data["fail_carol_state"])))
     if not test_data:
         reactor.run()
 
 def main_cs(test_data=None):
     #twisted logging (TODO disable for non-debug runs)
     if test_data:
-        wallet_name, args, options, use_ssl, alt_class, alt_c_class = test_data
+        wallet_name, args, options, use_ssl, alt_class, alt_c_class, fail_alice_state, fail_carol_state = test_data
     else:
         log.startLogging(sys.stdout)
         #Joinmarket wallet
@@ -124,7 +126,8 @@ def main_cs(test_data=None):
             main_server(options, wallet)
         else:
             main_server(options, wallet, {'use_ssl': use_ssl,
-                                          'alt_c_class': alt_c_class})
+                                          'alt_c_class': alt_c_class,
+                                          'fail_carol_state': fail_carol_state})
             return wallet.get_balance_by_mixdepth()
         return
     tx01_amount = int(args[1])
@@ -171,7 +174,11 @@ def main_cs(test_data=None):
     cpp.set_tx5_address(tx5address)
     testing_mode = True if test_data else False
     aliceclass = alt_class if test_data and alt_class else CoinSwapAlice
-    alice = aliceclass(wallet, 'alicestate', cpp, testing_mode=testing_mode)
+    if fail_alice_state:
+        alice = aliceclass(wallet, 'alicestate', cpp, testing_mode=testing_mode,
+                           fail_state=fail_alice_state)
+    else:
+        alice = aliceclass(wallet, 'alicestate', cpp, testing_mode=testing_mode)
     scheme, server, port = options.serverport.split(":")
     print("got this scheme, server, port: ", scheme, server, port)
     if scheme == "https":

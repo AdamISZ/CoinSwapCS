@@ -79,10 +79,12 @@ class CoinSwapJSONRPCClient(object):
         d.addCallback(self.json_callback).addErrback(self.error)
 
 class CoinSwapCarolJSONServer(jsonrpc.JSONRPC):
-    def __init__(self, wallet, testing_mode=False, carol_class=CoinSwapCarol):
+    def __init__(self, wallet, testing_mode=False, carol_class=CoinSwapCarol,
+                 fail_carol_state=None):
         self.testing_mode = testing_mode
         self.wallet = wallet
         self.carol_class = carol_class
+        self.fail_carol_state = fail_carol_state
         self.carols = {}
         jsonrpc.JSONRPC.__init__(self)
 
@@ -104,11 +106,19 @@ class CoinSwapCarolJSONServer(jsonrpc.JSONRPC):
         cpp = CoinSwapPublicParameters()
         cpp.set_tx4_address(tx4address)
         try:
-            if not self.set_carol(self.carol_class(self.wallet, 'carolstate', cpp,
+            if self.fail_carol_state:
+                if not self.set_carol(self.carol_class(self.wallet, 'carolstate',
+                                    cpp, testing_mode=self.testing_mode,
+                                    fail_state=self.fail_carol_state),
+                                      alice_handshake["session_id"]):
+                    return False
+            else:
+                if not self.set_carol(self.carol_class(self.wallet, 'carolstate', cpp,
                                                 testing_mode=self.testing_mode),
                                         alice_handshake["session_id"]):
-                return False
-        except:
+                    return False
+        except Exception as e:
+            cslog.info("Error in setting up handshake: " + repr(e))
             return False
         return self.carols[alice_handshake["session_id"]].sm.tick_return(
             "handshake", alice_handshake)

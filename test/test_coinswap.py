@@ -8,7 +8,8 @@ data_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0, os.path.join(data_dir))
 
 from coinswap import cs_single, get_log, load_coinswap_config, sync_wallet
-from bad_participants import (AliceBadHandshake, AliceWrongSecret,
+from bad_participants import (BadAlice, BadCarol,
+                              AliceBadHandshake, AliceWrongSecret,
                               AliceBadNegotiate, AliceBadCompleteNegotiation,
                               AliceFailSendTX0id, AliceFailReceiveTX1id,
                               AliceBadTX3Sig, AliceNoBrTX0, AliceBadTX01Monitor,
@@ -36,7 +37,8 @@ alice_classes = {"cooperative": None,
                  "badsendtx3sig": AliceBadTX3Sig,
                  "nobroadcasttx0": AliceNoBrTX0,
                  "notx01monitor": AliceBadTX01Monitor,
-                 "badreceivetx5sig": AliceFailReceiveTX5Sig}
+                 "badreceivetx5sig": AliceFailReceiveTX5Sig,
+                 "rfakesecret": BadAlice}
 
 carol_classes = {"cbadhandshake": CarolBadHandshake,
                  "cbadnegotiate": CarolBadNegotiate,
@@ -52,9 +54,27 @@ alice_funds_not_moved_cases = ["badhandshake", "badncs", "badcompleten",
                                "nobroadcasttx0",
                                "cbadhandshake", "cbadnegotiate", "cbadsendtx1id"]
 
-carol_funds_not_moved_cases = alice_funds_not_moved_cases + ["badsendtx3sig",
-                                                             "cbadreceivetx3sig",
-                                                             "cnobroadcasttx1"]
+alice_recover_cases = {}
+for i in range(3, 12):
+    rt = "ra" + str(i)
+    alice_recover_cases[rt] = i
+    alice_classes[rt] = BadAlice
+    if i < 7:
+        alice_funds_not_moved_cases.append(rt)
+
+carol_funds_not_moved_cases = ["badsendtx3sig", "cbadreceivetx3sig",
+                               "cnobroadcasttx1"]
+carol_recover_cases = {}
+for i in range(3, 10):
+    rt = "rc" + str(i)
+    carol_recover_cases[rt] = i
+    carol_classes[rt] = BadCarol
+    if i < 4:
+        alice_funds_not_moved_cases.append(rt)
+    if i < 6:
+        carol_funds_not_moved_cases.append(rt)
+
+carol_funds_not_moved_cases += alice_funds_not_moved_cases
 
 """parametrize is not allowed with injected config vars from command line;
 also, multiple runs of the reactor is not supported. So, we just statically
@@ -82,14 +102,14 @@ def miner():
 def start_mining(l):
     l.start(4.0)
 
-def runcase(alice_class, carol_class):
+def runcase(alice_class, carol_class, fail_alice_state=None, fail_carol_state=None):
     options_server = Options()
     wallets = make_wallets(num_alices + 1,
                                wallet_structures=wallet_structures,
                                mean_amt=funding_amount)
     args_server = ["dummy"]
     test_data_server = (wallets[num_alices]['seed'], args_server, options_server,
-                        False, None, carol_class)
+                        False, None, carol_class, None, fail_carol_state)
     carol_bbmb = main_cs(test_data_server)
     options_alice = Options()
     options_alice.serve = False
@@ -99,7 +119,7 @@ def runcase(alice_class, carol_class):
         if dest_addr:
             args_alice.append(dest_addr)
         test_data_alice = (wallets[i]['seed'], args_alice, options_alice, False,
-                           alice_class, None)
+                           alice_class, None, fail_alice_state, None)
         alices.append(main_cs(test_data_alice))
     l = task.LoopingCall(miner)
     reactor.callWhenRunning(start_mining, l)
@@ -121,7 +141,12 @@ def test_run_both(setup_wallets, runtype):
     #participant classes (only Alice for now)
     ac = alice_classes[runtype] if runtype in alice_classes else None
     cc = carol_classes[runtype] if runtype in carol_classes else None
-    alices, carol_bbmb, carol_wallet = runcase(ac, cc)
+    fail_alice_state = alice_recover_cases[
+        runtype] if runtype in alice_recover_cases else None
+    fail_carol_state = carol_recover_cases[
+        runtype] if runtype in carol_recover_cases else None
+    alices, carol_bbmb, carol_wallet = runcase(ac, cc, fail_alice_state,
+                                               fail_carol_state)
     #test case function will only return on reactor shutdown; Alice and Carol
     #objects are set at the start, but are references so updated.
     #Check the wallet states reflect the expected updates.
