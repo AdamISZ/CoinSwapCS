@@ -15,7 +15,6 @@ mk_coinswapconf()
     if [[ ! -d $HOME/.CoinSwapCS ]]; then
         mkdir $HOME/.CoinSwapCS
     fi
-    sed -i 's/bitcoin_cli_cmd = bitcoin-cli/bitcoin_cli_cmd = '"${bitcoind_dir//\//\\\/}"'bitcoin-cli/' ${tmpdir}/coinswapcs.cfg
 }
 
 clean_datadir()
@@ -52,8 +51,6 @@ main()
         return 1
     else
         local bitcoind_dir="$(dirname ${bitcoind_})/"
-        path_restore="$PATH"
-        export PATH="${bitcoind_dir}:$PATH"
         shift
     fi
 
@@ -92,7 +89,6 @@ main()
         clean_datadir "${tmpdir}"
     fi
     unlink $HOME/.CoinSwapCS/coinswapcs.cfg
-    export PATH="${path_restore}"
 }
 
 main $@
