@@ -51,7 +51,8 @@ carol_classes = {"cbadhandshake": CarolBadHandshake,
 
 alice_funds_not_moved_cases = ["badhandshake", "badncs", "badcompleten",
                                "badsendtx0id", "badreceivetx1id",
-                               "nobroadcasttx0",
+                               "badsendtx3sig", "nobroadcasttx0",
+                               "cbadreceivetx3sig",
                                "cbadhandshake", "cbadnegotiate", "cbadsendtx1id"]
 
 alice_recover_cases = {}
@@ -62,14 +63,13 @@ for i in range(3, 12):
     if i < 7:
         alice_funds_not_moved_cases.append(rt)
 
-carol_funds_not_moved_cases = ["badsendtx3sig", "cbadreceivetx3sig",
-                               "cnobroadcasttx1"]
+carol_funds_not_moved_cases = ["cnobroadcasttx1"]
 carol_recover_cases = {}
 for i in range(3, 10):
     rt = "rc" + str(i)
     carol_recover_cases[rt] = i
     carol_classes[rt] = BadCarol
-    if i < 4:
+    if i < 5:
         alice_funds_not_moved_cases.append(rt)
     if i < 6:
         carol_funds_not_moved_cases.append(rt)

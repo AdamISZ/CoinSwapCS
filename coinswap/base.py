@@ -228,7 +228,7 @@ class StateMachine(object):
             #at point of backout.
             self.freeze = True
             reactor.callLater(0, self.backout_callback, msg)
-            return False
+            return (False, msg)
         if self.finalize:
             if self.state > 2:
                 self.finalize()
@@ -240,7 +240,8 @@ class StateMachine(object):
                               self.stallMonitor, self.state)
         if self.state in self.auto_continue:
             return self.tick_return(self.callbacks[self.state].__name__)
-        return retval
+
+        return (retval, msg)
 
     def tick(self, *args):
         """Executes processing for each state with order enforced.

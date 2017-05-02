@@ -101,9 +101,9 @@ class CoinSwapCarol(CoinSwapParticipant):
         if d["destination_chain"] != self.destination_chain:
             return (False, "destination chain was wrong: " + d["destination_chain"])
         if d["amount"] < self.minimum_amount:
-            return (False, "Requested amount too small: " + d["amount"])
+            return (False, "Requested amount too small: " + str(d["amount"]))
         if d["amount"] > self.maximum_amount:
-            return (False, "Requested amount too large: " + d["amount"])
+            return (False, "Requested amount too large: " + str(d["amount"]))
         return (True, "Handshake parameters from Alice accepted")
 
     def negotiate_coinswap_parameters(self, params):

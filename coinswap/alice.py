@@ -105,13 +105,13 @@ class CoinSwapAlice(CoinSwapParticipant):
         self.send(to_send)
         return (True, "Handshake OK")
 
-    def negotiate_coinswap_parameters(self, accepted):
+    def negotiate_coinswap_parameters(self, carol_response):
         """send parameters and ephemeral keys, destination address to Carol.
         Receive back ephemeral keys and destination address, or rejection,
         from Carol.
         """
-        if not accepted:
-            return (False, "Carol rejected handshake.")
+        if not (carol_response and carol_response[0]):
+            return (False, carol_response[1])
         to_send = [self.coinswap_parameters.tx0_amount,
                    self.coinswap_parameters.tx2_recipient_amount,
                    self.coinswap_parameters.tx3_recipient_amount,
@@ -136,11 +136,11 @@ class CoinSwapAlice(CoinSwapParticipant):
         #accepted
         for k in self.required_key_names:
             self.coinswap_parameters.set_pubkey(k, self.keyset[k][1])
-        self.coinswap_parameters.set_pubkey("key_2_2_AC_1", carol_response[1])
-        self.coinswap_parameters.set_pubkey("key_2_2_CB_0", carol_response[2])
-        self.coinswap_parameters.set_pubkey("key_TX2_secret", carol_response[3])
-        self.coinswap_parameters.set_pubkey("key_TX3_lock", carol_response[4])
-        self.coinswap_parameters.set_tx4_address(carol_response[5])
+        self.coinswap_parameters.set_pubkey("key_2_2_AC_1", carol_response[0][1])
+        self.coinswap_parameters.set_pubkey("key_2_2_CB_0", carol_response[0][2])
+        self.coinswap_parameters.set_pubkey("key_TX2_secret", carol_response[0][3])
+        self.coinswap_parameters.set_pubkey("key_TX3_lock", carol_response[0][4])
+        self.coinswap_parameters.set_tx4_address(carol_response[0][5])
         if not self.coinswap_parameters.is_complete():
             return (False,
                     "Coinswap public parameter negotiation failed, incomplete.")
@@ -213,7 +213,11 @@ class CoinSwapAlice(CoinSwapParticipant):
         Create our version of TX3 and validate the sigs for TX2 and TX3.
         Then create our sig on TX3 and send to Carol.
         """
-        txid1, sigtx2, sigtx3 = params
+        innerparams, msg = params
+        if not innerparams:
+            return (False, "Carol did not send TXID1,TX23sig, error message: " + \
+                    msg)
+        txid1, sigtx2, sigtx3 = innerparams
         self.txid1 = txid1
         if not self.tx2.include_signature(1, sigtx2):
             return (False, "Counterparty signature for TX2 invalid.")
@@ -247,10 +251,14 @@ class CoinSwapAlice(CoinSwapParticipant):
         self.send(sig)
         return (True, "Sent TX3 sig OK.")
 
-    def broadcast_tx0(self, accepted):
+    def broadcast_tx0(self, acceptedmsg):
         #We have completed first-phase processing.
         #We push our TX0 and wait for the other side to complete by
         #pushing TX1.
+        accepted, msg = acceptedmsg
+        if not accepted:
+            return (False, "Counterparty did not accept our TX3 signature, " + \
+                    "error message: " + msg)
         errmsg, success = self.tx0.push()
         if not success:
             return (False, "Failed to push TX0, errmsg: " + errmsg)
@@ -291,13 +299,15 @@ class CoinSwapAlice(CoinSwapParticipant):
         self.send(self.secret)
         return (True, "Secret sent OK")
     
-    def receive_tx5_sig(self, sig):
+    def receive_tx5_sig(self, sigmsg):
         """Receive Carol's signature on TX5, reconstruct and verify,
         then sign ourselves and broadcast. Then wait for confirmation before
         TX4 construction.
         """
+        sig, msg = sigmsg
         if not sig:
-            return (False, "Failed to receive TX5 sig from Carol.")
+            return (False, "Failed to receive TX5 sig from Carol, error " + \
+                    "message: " + msg)
         self.tx5 = CoinSwapTX45.from_params(
             self.coinswap_parameters.pubkeys["key_2_2_CB_0"],
                                 self.coinswap_parameters.pubkeys["key_2_2_CB_1"],

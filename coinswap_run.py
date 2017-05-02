@@ -68,17 +68,17 @@ def main_server(options, wallet, test_data=None):
     testing_mode = True if test_data else False
     carol_class = test_data['alt_c_class'] if test_data and \
         test_data['alt_c_class'] else CoinSwapCarol
+    fcs = test_data["fail_carol_state"] if test_data else None
     if cs_single().config.get("SERVER", "use_ssl") != "false":
         reactor.listenSSL(int(port), server.Site(CoinSwapCarolJSONServer(wallet,
                 testing_mode=testing_mode, carol_class=carol_class,
-                fail_carol_state=test_data["fail_carol_state"])),
-                          contextFactory = get_ssl_context())
+                fail_carol_state=fcs)), contextFactory = get_ssl_context())
     else:
         cslog.info("WARNING! Serving over HTTP, no TLS used!")
         reactor.listenTCP(int(port), server.Site(CoinSwapCarolJSONServer(wallet,
                                                     testing_mode=testing_mode,
                                                     carol_class=carol_class,
-                                fail_carol_state=test_data["fail_carol_state"])))
+                                                    fail_carol_state=fcs)))
     if not test_data:
         reactor.run()
 
@@ -174,7 +174,7 @@ def main_cs(test_data=None):
     cpp.set_tx5_address(tx5address)
     testing_mode = True if test_data else False
     aliceclass = alt_class if test_data and alt_class else CoinSwapAlice
-    if fail_alice_state:
+    if test_data and fail_alice_state:
         alice = aliceclass(wallet, 'alicestate', cpp, testing_mode=testing_mode,
                            fail_state=fail_alice_state)
     else:
