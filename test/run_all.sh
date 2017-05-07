@@ -36,6 +36,21 @@ run_test()
     echo "$?"
 }
 
+test_case()
+{
+    case "$@" in
+        ""|all)
+            echo "${tests[@]} ${recovery_tests[@]}"
+            ;;
+        recovery)
+            echo "${recovery_tests[@]}"
+           ;;
+        *)
+            echo "$@"
+            ;;
+    esac
+}
+
 main()
 {
     local tests=( "cooperative" "badhandshake" "fakesecret" \
@@ -43,6 +58,7 @@ main()
         "badsendtx3sig" "nobroadcasttx0" "notx01monitor" "badreceivetx5sig" \
         "cbadhandshake" "cbadnegotiate" "cbadsendtx1id" "cbadreceivetx3sig" \
         "cnobroadcasttx1" "cbadreceivesecret" "cbadsendtx5sig" "cbadreceivetx4sig")
+    local recovery_tests=( rc{3..9} ra{3..11} )
 
     local bitcoind_="${1:-$(which bitcoind)}"
     echo "using bitcoind : ${bitcoind_}" 2>&1
@@ -67,7 +83,7 @@ main()
 
     mk_bitcoinconf "${tmpdir}"
     mk_coinswapconf "${tmpdir}"
-    local test_queue=( ${1:-${tests[@]}} )
+    local test_queue=( $( test_case "$@") )
     for test_case in ${test_queue[@]}; do
         curtest="${tmpdir}/${test_case}_${RANDOM}"
         mkdir ${curtest}
