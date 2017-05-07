@@ -51,6 +51,26 @@ test_case()
     esac
 }
 
+get_session_id()
+{
+    grep -o 'session_id": ".*",' ${curtest}/pytest.log | cut -d'"' -f3
+}
+
+mv_session_files()
+{
+    local session_id="$( get_session_id )"
+    local alice_session="${session_dir}/alicestate${session_id}.json"
+    local carol_session="${session_dir}/carolstate${session_id}.json"
+
+    if [[ -r ${alice_session} ]]; then
+        mv "${alice_session}" ${curtest}/
+    fi
+
+    if [[ -r ${carol_session} ]]; then
+        mv "${carol_session}" ${curtest}/
+    fi
+}
+
 main()
 {
     local tests=( "cooperative" "badhandshake" "fakesecret" \
@@ -81,6 +101,8 @@ main()
         shift
     fi
 
+    local session_dir="$HOME/.CoinSwapCS/sessions"
+
     mk_bitcoinconf "${tmpdir}"
     mk_coinswapconf "${tmpdir}"
     local test_queue=( $( test_case "$@") )
@@ -92,6 +114,7 @@ main()
         ln -fs ${tmpdir}/coinswapcs.cfg $HOME/.CoinSwapCS/coinswapcs.cfg
         echo "testing : ${curtest}" 1>&2
         run_test "${curtest}/bitcoin.conf" "${test_case}"
+        mv_session_files
         sleep 2
         if [[ -e ${curtest}/bitcoind.pid ]]; then
             mapfile btcpid <${curtest}/bitcoind.pid
