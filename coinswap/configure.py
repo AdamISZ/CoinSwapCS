@@ -200,6 +200,8 @@ ssl_certificate_location = 0
 #to what's available in mixdepth 0 of the wallet.
 minimum_amount = 5000000
 maximum_amount = 500000000
+#to reduce load/complexity, an upper limit on the number of concurrent coinswaps
+maximum_concurrent_coinswaps = 3
 """
 
 def lookup_appdata_folder():

@@ -10,7 +10,7 @@ except:
 from .base import get_current_blockheight, CoinSwapPublicParameters
 from .alice import CoinSwapAlice
 from .carol import CoinSwapCarol
-from .configure import get_log
+from .configure import get_log, cs_single
 from twisted.internet import defer  
 
 cslog = get_log()
@@ -44,7 +44,8 @@ class CoinSwapJSONRPCClient(object):
                     5: "sigtx3",
                     9: "secret",
                     12: "sigtx4"}
-    def __init__(self, host, port, json_callback, backout_callback, usessl):
+    def __init__(self, host, port, json_callback=None, backout_callback=None,
+                 usessl=False):
         self.host = host
         self.port = int(port)
         #Callback fired on receiving response to send()
@@ -86,7 +87,46 @@ class CoinSwapCarolJSONServer(jsonrpc.JSONRPC):
         self.carol_class = carol_class
         self.fail_carol_state = fail_carol_state
         self.carols = {}
+        self.update_status()
         jsonrpc.JSONRPC.__init__(self)
+
+    def update_status(self):
+        #initialise status variables from config; some are updated dynamically
+        c = cs_single().config
+        source_chain = c.get("SERVER", "source_chain")
+        destination_chain = c.get("SERVER", "destination_chain")
+        minimum_amount = c.getint("SERVER", "minimum_amount")
+        maximum_amount = c.getint("SERVER", "maximum_amount")
+        status = {}
+        #TODO requires keeping track of endpoints of swaps
+        if len(self.carols.keys()) >= c.getint("SERVER",
+                                               "maximum_concurrent_coinswaps"):
+            status["busy"] = True
+        else:
+            status["busy"] = False
+        #reset minimum and maximum depending on wallet
+        #we source only from mixdepth 0
+        available_funds = self.wallet.get_balance_by_mixdepth(verbose=False)[0]
+        if available_funds < minimum_amount:
+            status["busy"] = True
+            status["maximum_amount"] = -1
+        elif available_funds < maximum_amount:
+            status["maximum_amount"] = available_funds
+        else:
+            status["maximum_amount"] = maximum_amount
+        status["minimum_amount"] = minimum_amount
+        status["source_chain"] = source_chain
+        status["destination_chain"] = destination_chain
+        status["cscs_version"] = cs_single().CSCS_VERSION
+        #TODO fees
+        return status
+
+    def jsonrpc_status(self):
+        """This can be polled at any time.
+        The call to get_balance_by_mixdepth does not involve sync,
+        so is not resource intensive.
+        """
+        return self.update_status()
 
     def set_carol(self, carol, sessionid):
         """Once a CoinSwapCarol object has been initiated, its session id

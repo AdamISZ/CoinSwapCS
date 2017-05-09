@@ -384,3 +384,32 @@ class CoinSwapAlice(CoinSwapParticipant):
         self.txid4 = result
         self.loop_tx4.stop()
         self.quit()
+
+    def check_server_status(self, status):
+        """Retrieve the server status and validate that it allows
+        coinswaps with the chosen parameters to start.
+        """
+        assert self.sm.state == 0
+        if not all([x in status.keys() for x in ["source_chain",
+                "destination_chain", "cscs_version", "minimum_amount",
+                "maximum_amount", "busy"]]):
+            cslog.info("Server gave invalid status response.")
+            reactor.stop()
+        elif status["source_chain"] != "BTC" or status["destination_chain"] != "BTC":
+            cslog.info("Server is not BTC-BTC chain")
+            reactor.stop()
+        elif status["cscs_version"] != cs_single().CSCS_VERSION:
+            cslog.info("Server has wrong CSCS version, aborting")
+            reactor.stop()
+        elif status["busy"] or status["maximum_amount"] < 0:
+            cslog.info("Server is not currently available")
+            reactor.stop()
+        elif self.coinswap_parameters.tx0_amount < status["minimum_amount"]:
+            cslog.info("Amount too small for server")
+            reactor.stop()
+        elif self.coinswap_parameters.tx0_amount > status["maximum_amount"]:
+            cslog.info("Amount too large for server")
+            reactor.stop()
+        else:
+            cslog.info("Server settings are compatible, continuing...")
+            self.sm.tick()

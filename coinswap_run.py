@@ -193,7 +193,8 @@ def main_cs(test_data=None):
     alice_client = CoinSwapJSONRPCClient(server[2:], port,
                                          alice.sm.tick, alice.backout, usessl)
     alice.set_jsonrpc_client(alice_client)
-    reactor.callWhenRunning(alice.sm.tick)
+    reactor.callWhenRunning(alice_client.send_poll, "status",
+                            alice.check_server_status)
     if not test_data:
         reactor.run()
     if test_data:
