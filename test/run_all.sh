@@ -36,6 +36,41 @@ run_test()
     echo "$?"
 }
 
+test_case()
+{
+    case "$@" in
+        ""|all)
+            echo "${tests[@]} ${recovery_tests[@]}"
+            ;;
+        recovery)
+            echo "${recovery_tests[@]}"
+           ;;
+        *)
+            echo "$@"
+            ;;
+    esac
+}
+
+get_session_id()
+{
+    grep -o 'session_id": ".*",' ${curtest}/pytest.log | cut -d'"' -f3
+}
+
+mv_session_files()
+{
+    local session_id="$( get_session_id )"
+    local alice_session="${session_dir}/alicestate${session_id}.json"
+    local carol_session="${session_dir}/carolstate${session_id}.json"
+
+    if [[ -r ${alice_session} ]]; then
+        mv "${alice_session}" ${curtest}/
+    fi
+
+    if [[ -r ${carol_session} ]]; then
+        mv "${carol_session}" ${curtest}/
+    fi
+}
+
 main()
 {
     local tests=( "cooperative" "badhandshake" "fakesecret" \
@@ -43,6 +78,7 @@ main()
         "badsendtx3sig" "nobroadcasttx0" "notx01monitor" "badreceivetx5sig" \
         "cbadhandshake" "cbadnegotiate" "cbadsendtx1id" "cbadreceivetx3sig" \
         "cnobroadcasttx1" "cbadreceivesecret" "cbadsendtx5sig" "cbadreceivetx4sig")
+    local recovery_tests=( rc{3..9} ra{3..11} )
 
     local bitcoind_="${1:-$(which bitcoind)}"
     echo "using bitcoind : ${bitcoind_}" 2>&1
@@ -65,9 +101,11 @@ main()
         shift
     fi
 
+    local session_dir="$HOME/.CoinSwapCS/sessions"
+
     mk_bitcoinconf "${tmpdir}"
     mk_coinswapconf "${tmpdir}"
-    local test_queue=( ${1:-${tests[@]}} )
+    local test_queue=( $( test_case "$@") )
     for test_case in ${test_queue[@]}; do
         curtest="${tmpdir}/${test_case}_${RANDOM}"
         mkdir ${curtest}
@@ -76,6 +114,7 @@ main()
         ln -fs ${tmpdir}/coinswapcs.cfg $HOME/.CoinSwapCS/coinswapcs.cfg
         echo "testing : ${curtest}" 1>&2
         run_test "${curtest}/bitcoin.conf" "${test_case}"
+        mv_session_files
         sleep 2
         if [[ -e ${curtest}/bitcoind.pid ]]; then
             mapfile btcpid <${curtest}/bitcoind.pid
