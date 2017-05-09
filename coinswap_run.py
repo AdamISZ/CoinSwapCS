@@ -20,8 +20,30 @@ from twisted.web import server
 import time
 import os
 import sys
+import json
 
 cslog = get_log()
+
+def parse_server_string(server_string):
+    scheme, server, port = server_string.split(":")
+    print("got this scheme, server, port: ", scheme, server, port)
+    if scheme == "https":
+        usessl = True
+    elif scheme == "http":
+        usessl = False
+    else:
+        print("Invalid server string: ", server_string)
+        sys.exit(0)
+    if not server[:2] == "//":
+        print("Invalid server string: ", server_string)
+        sys.exit(0)
+    return server, port, usessl
+
+def print_status(status):
+    """Used for checkonly option
+    """
+    print(json.dumps(status, indent=4))
+    reactor.stop()
 
 def get_ssl_context():
     """Construct an SSL context factory from the user's privatekey/cert.
@@ -86,11 +108,19 @@ def main_cs(test_data=None):
     #twisted logging (TODO disable for non-debug runs)
     if test_data:
         wallet_name, args, options, use_ssl, alt_class, alt_c_class, fail_alice_state, fail_carol_state = test_data
+        server, port, usessl = parse_server_string(options.serverport)
     else:
-        log.startLogging(sys.stdout)
-        #Joinmarket wallet
         parser = get_coinswap_parser()
         (options, args) = parser.parse_args()
+        #Will only be used by client
+        server, port, usessl = parse_server_string(options.serverport)
+        if options.checkonly:
+            #no need for any more data; just query
+            alice_client = CoinSwapJSONRPCClient(server[2:], port, usessl=usessl)
+            reactor.callWhenRunning(alice_client.send_poll, "status", print_status)
+            reactor.run()
+            return
+        log.startLogging(sys.stdout)
         load_coinswap_config()
         wallet_name = args[0]
     #depth 0: spend in, depth 1: receive out, depth 2: for backout transactions.
@@ -179,17 +209,7 @@ def main_cs(test_data=None):
                            fail_state=fail_alice_state)
     else:
         alice = aliceclass(wallet, 'alicestate', cpp, testing_mode=testing_mode)
-    scheme, server, port = options.serverport.split(":")
-    print("got this scheme, server, port: ", scheme, server, port)
-    if scheme == "https":
-        usessl = True
-    elif scheme == "http":
-        usessl = False
-    else:
-        print("Invalid server string: ", options.serverport)
-        sys.exit(0)
-    if not server[:2] == "//":
-        print("Invalid server string: ", options.serverport)
+
     alice_client = CoinSwapJSONRPCClient(server[2:], port,
                                          alice.sm.tick, alice.backout, usessl)
     alice.set_jsonrpc_client(alice_client)

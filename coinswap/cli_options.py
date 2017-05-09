@@ -43,6 +43,26 @@ def get_coinswap_parser():
                   "Default https://localhost:7048. Use http:// instead of "
                   "https:// to use a non-TLS connection, but this is inadvisable "
                   "and will usually not be supported server-side."))
+    parser.add_option(
+                "-C",
+                "--check-only",
+                action="store_true",
+                dest="checkonly",
+                default=False,
+                help=("""
+For client, only query the server to check its current
+status. The following data will be returned:
+CSCS_VERSION: The version of CoinSwapCS served by the server.
+SOURCE_CHAIN: The coin type of the source, only BTC supported.
+DESTINATION_CHAIN: As above, for the destination coins, only BTC.
+MINIMUM_AMOUNT: Lowest amount in satoshis that the server currently
+supports; note this changes over time.
+MAXIMUM_AMOUNT: Largest amount in satoshis that the server currently
+supports; note this changes over time.
+BUSY: If True, the server is currently not available (usually because
+is serving other requests, or has run out of coins).
+Default: False
+"""))
     parser.add_option("--fast",
                       action="store_true",
                       dest="fastsync",
