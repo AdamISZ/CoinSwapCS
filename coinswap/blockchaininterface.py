@@ -286,11 +286,19 @@ class BitcoinCoreInterface(BlockchainInterface):
             res = str(res)
         return res
 
-    def add_watchonly_addresses(self, addr_list, wallet_name):
+    def import_addresses(self, addr_list, wallet_name):
         cslog.debug('importing ' + str(len(addr_list)) +
                   ' addresses into account ' + wallet_name)
         for addr in addr_list:
             self.rpc('importaddress', [addr, wallet_name, False])
+
+    def add_watchonly_addresses(self, addr_list, wallet_name):
+        """For backwards compatibility, this fn name is preserved
+        as the case where we quit the program if a rescan is required;
+        but in some cases a rescan is not required (if the address is known
+        to be new/unused). For that case use import_addresses instead.
+        """
+        self.import_addresses(addr_list, wallet_name)
         if cs_single().config.get("BLOCKCHAIN",
                                   "blockchain_source") != 'regtest': #pragma: no cover
             #Exit conditions cannot be included in tests

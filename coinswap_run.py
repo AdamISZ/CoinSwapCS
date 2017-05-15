@@ -125,13 +125,16 @@ def main_cs(test_data=None):
         wallet_name = args[0]
     #depth 0: spend in, depth 1: receive out, depth 2: for backout transactions.
     max_mix_depth = 3
-    if not os.path.exists(os.path.join('wallets', wallet_name)):
-        wallet = Wallet(wallet_name, None, max_mix_depth, 6)
+    wallet_dir = os.path.join(cs_single().homedir, 'wallets')
+    if not os.path.exists(os.path.join(wallet_dir, wallet_name)):
+        wallet = Wallet(wallet_name, None, max_mix_depth, 6,
+                        wallet_dir=wallet_dir)
     else:
         while True:
             try:
                 pwd = get_password("Enter wallet decryption passphrase: ")
-                wallet = Wallet(wallet_name, pwd, max_mix_depth, 6)
+                wallet = Wallet(wallet_name, pwd, max_mix_depth, 6,
+                                wallet_dir=wallet_dir)
             except WalletError:
                 print("Wrong password, try again.")
                 continue

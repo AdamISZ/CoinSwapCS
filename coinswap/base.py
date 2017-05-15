@@ -814,7 +814,8 @@ class CoinSwapParticipant(object):
         backout addresses to local wallet.
         """
         wallet_name = cs_single().bc_interface.get_wallet_name(self.wallet)
-        cs_single().bc_interface.add_watchonly_addresses([address], wallet_name)
+        #It is safe here to import without rescan *if* the address is fresh.
+        cs_single().bc_interface.import_addresses([address], wallet_name)
 
     def watch_for_tx(self, tx):
         """Use the blockchain interface to update
