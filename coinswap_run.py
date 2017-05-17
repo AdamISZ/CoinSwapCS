@@ -117,7 +117,8 @@ def main_cs(test_data=None):
         if options.checkonly:
             #no need for any more data; just query
             alice_client = CoinSwapJSONRPCClient(server[2:], port, usessl=usessl)
-            reactor.callWhenRunning(alice_client.send_poll, "status", print_status)
+            reactor.callWhenRunning(alice_client.send_poll_unsigned,
+                                    "status", print_status)
             reactor.run()
             return
         log.startLogging(sys.stdout)
@@ -202,8 +203,6 @@ def main_cs(test_data=None):
     #or destination addresses.
     cpp = CoinSwapPublicParameters(tx01_amount, tx24_recipient_amount,
                                    tx35_recipient_amount)
-    #Alice must set the unique identifier for this run.
-    cpp.set_session_id()
     cpp.set_tx5_address(tx5address)
     testing_mode = True if test_data else False
     aliceclass = alt_class if test_data and alt_class else CoinSwapAlice
@@ -216,7 +215,7 @@ def main_cs(test_data=None):
     alice_client = CoinSwapJSONRPCClient(server[2:], port,
                                          alice.sm.tick, alice.backout, usessl)
     alice.set_jsonrpc_client(alice_client)
-    reactor.callWhenRunning(alice_client.send_poll, "status",
+    reactor.callWhenRunning(alice_client.send_poll_unsigned, "status",
                             alice.check_server_status)
     if not test_data:
         reactor.run()

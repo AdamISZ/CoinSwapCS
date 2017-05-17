@@ -1,3 +1,7 @@
+import os
+import binascii
+import json
+
 from txjsonrpc.web.jsonrpc import Proxy
 from txjsonrpc.web import jsonrpc
 from twisted.web import server
@@ -7,7 +11,8 @@ try:
     from twisted.internet import ssl
 except:
     pass
-from .base import get_current_blockheight, CoinSwapPublicParameters
+from .base import (get_current_blockheight, CoinSwapPublicParameters,
+                   prepare_ecdsa_msg)
 from .alice import CoinSwapAlice
 from .carol import CoinSwapCarol
 from .configure import get_log, cs_single
@@ -65,9 +70,16 @@ class CoinSwapJSONRPCClient(object):
         """
         self.backout_callback(str(errmsg))
 
-    def send_poll(self, method, callback, *args):
-        """Stateless queries use this call, and provide
+    def send_poll(self, method, callback, noncesig, sessionid, *args):
+        """Stateless queries during the run use this call, and provide
         their own callback for the response.
+        """
+        d = self.proxy.callRemote("coinswap", sessionid, noncesig, method, *args)
+        d.addCallback(callback).addErrback(self.error)
+
+    def send_poll_unsigned(self, method, callback, *args):
+        """Stateless queries outside of a coinswap run use
+        this query method; no nonce, sessionid or signature needed.
         """
         d = self.proxy.callRemote(method, *args)
         d.addCallback(callback).addErrback(self.error)
@@ -131,59 +143,77 @@ class CoinSwapCarolJSONServer(jsonrpc.JSONRPC):
     def set_carol(self, carol, sessionid):
         """Once a CoinSwapCarol object has been initiated, its session id
         has been set, so it can be added to the dict.
-        TODO check for sessionid conflicts here.
         """
+        #should be computationally infeasible; note *we* set this.
+        assert sessionid not in self.carols
         self.carols[sessionid] = carol
         return True
 
-    def jsonrpc_handshake(self, alice_handshake):
+    def consume_nonce(self, nonce, sessionid):
+        if sessionid not in self.carols:
+            return False
+        return self.carols[sessionid].consume_nonce(nonce)
+
+    def validate_sig_nonce(self, carol, paramlist):
+        noncesig = paramlist[0]
+        if not "nonce" in noncesig or not "sig" in noncesig:
+            return (False, "Ill formed nonce/sig")
+        nonce = noncesig["nonce"]
+        sig = noncesig["sig"]
+        if not carol.consume_nonce(nonce):
+            return (False, "Nonce invalid, probably a repeat")
+        #paramlist[1] is method name, the remaining are the args
+        msg_to_verify = prepare_ecdsa_msg(nonce, paramlist[1], *paramlist[2:])
+        if not carol.validate_alice_sig(sig, msg_to_verify):
+            return (False, "ECDSA message signature verification failed")
+        return (True, "Nonce and signature OK")
+
+    def jsonrpc_coinswap(self, *paramlist):
+        """To get round txjsonrpc's rather funky function naming trick,
+        we use 1 generic json rpc method and then read the real method as a field.
+        This allows us to handle generic features like signatures and nonces in
+        this function before deferring actual methods to sub-calls.
+        All calls use syntax:
+        sessionid, {noncesig dict}, method, *methodargs
+        """
+        if len(paramlist) < 3:
+            return (False, "Wrong length of paramlist: " + str(len(paramlist)))
+        sessionid = paramlist[0]
+        if sessionid not in self.carols:
+            return (False, "Unrecognized sessionid: " + str(sessionid))
+        carol = self.carols[sessionid]
+        valid, errmsg = self.validate_sig_nonce(carol, paramlist[1:])
+        if not valid:
+            return (False, "Invalid message from Alice: " + errmsg)
+        return carol.get_rpc_response(paramlist[2], paramlist[3:])
+
+    def jsonrpc_handshake(self, *alice_handshake):
         """The handshake messages initiates the session, so is handled
         differently from other calls (future anti-DOS features may be
-        added here).
+        added here). It does not use the sig/nonce since the session key
+        is not yet established.
         """
         #Prepare a new CoinSwapCarol instance for this session
+        #start with a unique ID of 16 byte entropy:
+        sessionid = binascii.hexlify(os.urandom(16))
         tx4address = self.wallet.get_new_addr(1, 1)
         cpp = CoinSwapPublicParameters()
+        cpp.set_session_id(sessionid)
         cpp.set_tx4_address(tx4address)
         try:
             if self.fail_carol_state:
                 if not self.set_carol(self.carol_class(self.wallet, 'carolstate',
                                     cpp, testing_mode=self.testing_mode,
-                                    fail_state=self.fail_carol_state),
-                                      alice_handshake["session_id"]):
+                                    fail_state=self.fail_carol_state), sessionid):
                     return False
             else:
                 if not self.set_carol(self.carol_class(self.wallet, 'carolstate', cpp,
                                                 testing_mode=self.testing_mode),
-                                        alice_handshake["session_id"]):
+                                        sessionid):
                     return False
         except Exception as e:
-            cslog.info("Error in setting up handshake: " + repr(e))
-            return False
-        return self.carols[alice_handshake["session_id"]].sm.tick_return(
+            return (False, "Error in setting up handshake: " + repr(e))
+        if not self.consume_nonce(alice_handshake[1]["nonce"], sessionid):
+            return (False, "Invalid nonce in handshake.")
+        return self.carols[sessionid].sm.tick_return(
             "handshake", alice_handshake)
-
-    def jsonrpc_negotiate(self, *alice_parameter_list):
-        """Receive Alice's half of the public parameters,
-        and return our half if acceptable.
-        """
-        return self.carols[alice_parameter_list[0]].sm.tick_return(
-            "negotiate_coinswap_parameters", alice_parameter_list[1:])
-
-    def jsonrpc_tx0id_hx_tx2sig(self, *params):
-        return self.carols[params[0]].sm.tick_return("receive_tx0_hash_tx2sig",
-                                                    *params[1:])
-    def jsonrpc_sigtx3(self, sessionid, sig):
-        return self.carols[sessionid].sm.tick_return("receive_tx3_sig", sig)
-
-    def jsonrpc_phase2_ready(self, sessionid):
-        return self.carols[sessionid].is_phase2_ready()
-
-    def jsonrpc_secret(self, sessionid, secret):
-        return self.carols[sessionid].sm.tick_return("receive_secret", secret)
-
-    def jsonrpc_sigtx4(self, sessionid, sig, txid5):
-        return self.carols[sessionid].sm.tick_return("receive_tx4_sig", sig, txid5)
-
-    def jsonrpc_confirm_tx4(self, sessionid):
-        return self.carols[sessionid].is_tx4_confirmed()

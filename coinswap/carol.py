@@ -50,6 +50,51 @@ class CoinSwapCarol(CoinSwapParticipant):
     required_key_names = ["key_2_2_AC_1", "key_2_2_CB_0",
                                   "key_TX2_secret", "key_TX3_lock"]
 
+    def consume_nonce(self, nonce):
+        """Keep track of nonces for this session to prevent
+        a replay attack.
+        """
+        if nonce in self.consumed_nonces:
+            return False
+        self.consumed_nonces.append(nonce)
+        return True
+
+    def validate_alice_sig(self, sig, msg):
+        return btc.ecdsa_verify(str(msg), sig,
+                self.coinswap_parameters.pubkeys["key_session"])
+
+    def get_rpc_response(self, cmethod, paramlist):
+        try:
+            response_method = getattr(self, "jsonrpc_" + cmethod)
+        except:
+            return (False, "Method not found: " + str(cmethod))
+        return response_method(*paramlist)
+
+    def jsonrpc_negotiate(self, *alice_parameter_list):
+        """Receive Alice's half of the public parameters,
+        and return our half if acceptable.
+        """
+        return self.sm.tick_return("negotiate_coinswap_parameters",
+                                   alice_parameter_list)
+
+    def jsonrpc_tx0id_hx_tx2sig(self, *params):
+        return self.sm.tick_return("receive_tx0_hash_tx2sig", *params)
+
+    def jsonrpc_sigtx3(self, sig):
+        return self.sm.tick_return("receive_tx3_sig", sig)
+
+    def jsonrpc_phase2_ready(self):
+        return self.is_phase2_ready()
+
+    def jsonrpc_secret(self, secret):
+        return self.sm.tick_return("receive_secret", secret)
+
+    def jsonrpc_sigtx4(self, sig, txid5):
+        return self.sm.tick_return("receive_tx4_sig", sig, txid5)
+
+    def jsonrpc_confirm_tx4(self):
+        return self.is_tx4_confirmed()
+
     def get_state_machine_callbacks(self):
         return [(self.handshake, False, -1),
                 (self.negotiate_coinswap_parameters, False, -1),
@@ -76,12 +121,13 @@ class CoinSwapCarol(CoinSwapParticipant):
         self.minimum_amount = c.getint("SERVER", "minimum_amount")
         self.maximum_amount = c.getint("SERVER", "maximum_amount")
 
-    def handshake(self, d):
+    def handshake(self, alice_handshake):
         """Check that the proposed coinswap parameters
         are acceptable.
         """
         self.set_handshake_parameters()
         self.bbmb = self.wallet.get_balance_by_mixdepth(verbose=False)
+        d = alice_handshake[3]
         if d["coinswapcs_version"] != cs_single().CSCS_VERSION:
             return (False, "wrong CoinSwapCS version, was: " + \
                     str(d["coinswapcs_version"]) + ", should be: " + \
@@ -92,8 +138,9 @@ class CoinSwapCarol(CoinSwapParticipant):
             return (False, "Mismatched tx01_confirm_wait, was: " + \
             str(d["tx01_confirm_wait"]) + ", should be >=1 and less than:" + \
             cs_single().config.get("TIMEOUT", "tx01_confirm_wait") + 3)
-        if not self.coinswap_parameters.set_session_id(d["session_id"]):
-            return (False, "invalid session id proposed: " + str(d["session_id"]))
+        if not "key_session" in d:
+            #TODO validate that it's a real pubkey
+            return (False, "no session key from Alice")
         #immediately set the state file to the correct value
         self.state_file = self.state_file + self.coinswap_parameters.session_id + '.json'
         if d["source_chain"] != self.source_chain:
@@ -104,7 +151,10 @@ class CoinSwapCarol(CoinSwapParticipant):
             return (False, "Requested amount too small: " + str(d["amount"]))
         if d["amount"] > self.maximum_amount:
             return (False, "Requested amount too large: " + str(d["amount"]))
-        return (True, "Handshake parameters from Alice accepted")
+        #set the session pubkey for authorising future requests
+        self.coinswap_parameters.set_pubkey("key_session", d["key_session"])
+        return (self.coinswap_parameters.session_id,
+                "Handshake parameters from Alice accepted")
 
     def negotiate_coinswap_parameters(self, params):
         #receive parameters and ephemeral keys, destination address from Alice.

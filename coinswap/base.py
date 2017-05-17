@@ -21,6 +21,9 @@ COINSWAP_SECRET_ENTROPY_BYTES = 14
 
 cslog = get_log()
 
+def prepare_ecdsa_msg(nonce, method, *args):
+    return nonce + json.dumps([method] + list(args))
+
 def _byteify(data, ignore_dicts = False):
     # if this is a unicode string, return its string representation
     if isinstance(data, unicode):
@@ -798,6 +801,7 @@ class CoinSwapParticipant(object):
         self.phase2_ready = False
         self.tx4_confirmed = False
         self.successful_tx3_redeem = None
+        self.consumed_nonces = []
         #Carol must keep track of coins reserved for usage
         #so as to not select them to spend, twice, concurrently.
         #We only init with a fresh empty list if this is the first
@@ -1190,7 +1194,8 @@ class CoinSwapParticipant(object):
         (Ephemeral in the sense that they must *not* be used for different runs,
         but must of course be persisted for the run).
         """
-        self.keyset_keys = [self.generate_privkey() for _ in range(4)]
+        self.keyset_keys = [self.generate_privkey() for _ in range(
+            len(self.required_key_names))]
         self.keyset = {}
         for i, name in enumerate(self.required_key_names):
             self.keyset[name] = (self.keyset_keys[i],
@@ -1284,11 +1289,10 @@ class CoinSwapException(Exception):
 class CoinSwapPublicParameters(object):
     required_key_names = ["key_2_2_AC_0", "key_2_2_AC_1", "key_2_2_CB_0",
                           "key_2_2_CB_1", "key_TX2_secret", "key_TX2_lock",
-                          "key_TX3_secret", "key_TX3_lock"]
+                          "key_TX3_secret", "key_TX3_lock", "key_session"]
     attr_list = ['tx0_amount', 'tx1_amount', 'tx2_recipient_amount',
                   'tx3_recipient_amount', 'tx4_amount', 'tx5_amount',
-                  'tx4_address', 'tx5_address', 'timeouts', 'pubkeys',
-                  'session_id']
+                  'tx4_address', 'tx5_address', 'timeouts', 'pubkeys']
     def __init__(self,
                  tx01_amount=None,
                  tx24_recipient_amount=None,
@@ -1332,18 +1336,8 @@ class CoinSwapPublicParameters(object):
         self.tx3_recipient_amount = amt
         self.tx5_amount = amt
 
-    def set_session_id(self, sid=None):
-        if not sid:
-            self.session_id = str(random.randint(1, 1000000-1))
-        else:
-            try:
-                x = int(sid)
-                assert x in range(1, 1000000)
-            except:
-                cslog.info("Invalid sessionid: " + str(sid))
-                return False
-            self.session_id = sid
-        return True
+    def set_session_id(self, sid):
+        self.session_id = sid
 
     def serialize(self):
         """All data into a dict (for json persistence).

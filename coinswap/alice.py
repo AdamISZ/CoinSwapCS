@@ -19,7 +19,7 @@ from .base import (CoinSwapException, CoinSwapPublicParameters,
                       CoinSwapRedeemTX23Timeout, COINSWAP_SECRET_ENTROPY_BYTES,
                       get_coinswap_secret, get_current_blockheight,
                       create_hash_script, get_secret_from_vin,
-                      generate_escrow_redeem_script)
+                      generate_escrow_redeem_script, prepare_ecdsa_msg)
 from coinswap import cs_single
 
 cslog = get_log()
@@ -48,7 +48,7 @@ class CoinSwapAlice(CoinSwapParticipant):
     ==================================================
     """
     required_key_names = ["key_2_2_AC_0", "key_2_2_CB_1",
-                                  "key_TX2_lock", "key_TX3_secret"]
+                                "key_TX2_lock", "key_TX3_secret", "key_session"]
 
     def set_jsonrpc_client(self, jsonrpcclient):
         self.jsonrpcclient = jsonrpcclient
@@ -74,6 +74,9 @@ class CoinSwapAlice(CoinSwapParticipant):
                 (self.broadcast_tx5, True, 300000),
                 (self.send_tx4_sig, False, -1)]
 
+    def get_msg_nonce(self):
+        return binascii.hexlify(os.urandom(16))
+
     def send(self, *args):
         """The state machine state maps to a specific call in the
         JSON RPC API. The return value is passed to the callback, which
@@ -83,12 +86,23 @@ class CoinSwapAlice(CoinSwapParticipant):
         than the handshake which inits the session.
         """
         mn = self.jsonrpcclient.method_names[self.sm.state]
+        nonce = self.get_msg_nonce()
+        msg_to_sign = prepare_ecdsa_msg(nonce, mn, *args)
+        sig = btc.ecdsa_sign(msg_to_sign, self.keyset["key_session"][0])
+        noncesig = {"nonce": nonce, "sig": sig}
+        params = [self.coinswap_parameters.session_id, noncesig, mn] + list(args)
         if  mn != "handshake":
-            return self.jsonrpcclient.send(mn,
-                                self.coinswap_parameters.session_id, *args)
+            return self.jsonrpcclient.send("coinswap", *params)
         else:
-            return self.jsonrpcclient.send(mn, *args)
+            return self.jsonrpcclient.send("handshake", *params)
 
+    def send_poll(self, method, callback):
+        nonce = self.get_msg_nonce()
+        msg_to_sign = prepare_ecdsa_msg(nonce, method)
+        sig = btc.ecdsa_sign(msg_to_sign, self.keyset["key_session"][0])
+        noncesig = {"nonce": nonce, "sig": sig}
+        return self.jsonrpcclient.send_poll(method, callback, noncesig,
+                                            self.coinswap_parameters.session_id)
     def handshake(self):
         """Record the state of the wallet at the start of the process.
         Send a handshake message to Carol with required parameters for
@@ -96,7 +110,7 @@ class CoinSwapAlice(CoinSwapParticipant):
         """
         self.bbmb = self.wallet.get_balance_by_mixdepth(verbose=False)
         to_send = {"coinswapcs_version": cs_single().CSCS_VERSION,
-                   "session_id": self.coinswap_parameters.session_id,
+                   "key_session": self.keyset["key_session"][1],
                    "tx01_confirm_wait": cs_single().config.getint("TIMEOUT",
                                                             "tx01_confirm_wait"),
                    "source_chain": "BTC",
@@ -112,6 +126,9 @@ class CoinSwapAlice(CoinSwapParticipant):
         """
         if not (carol_response and carol_response[0]):
             return (False, carol_response[1])
+        if not len(carol_response[0]) == 32:
+            return (False, "Error: server returned invalid session ID")
+        self.coinswap_parameters.set_session_id(carol_response[0])
         to_send = [self.coinswap_parameters.tx0_amount,
                    self.coinswap_parameters.tx2_recipient_amount,
                    self.coinswap_parameters.tx3_recipient_amount,
@@ -276,10 +293,8 @@ class CoinSwapAlice(CoinSwapParticipant):
         But, we do not continue until the other side returns positive from
         the rpc call phase2_ready, i.e. they confirm they see them also. 
         """
-        self.phase2_loop = task.LoopingCall(self.jsonrpcclient.send_poll,
-                                            "phase2_ready",
-                                            self.phase2_callback,
-                                            self.coinswap_parameters.session_id)
+        self.phase2_loop = task.LoopingCall(self.send_poll, "phase2_ready",
+                                            self.phase2_callback)
         self.phase2_loop.start(3.0)
         return (True, "Wait for phase2 loop started")
 
@@ -371,9 +386,7 @@ class CoinSwapAlice(CoinSwapParticipant):
                       "of TX4; this has no effect on us, so we give up.")
             self.tx4_callback("None")
             return
-        self.jsonrpcclient.send_poll("confirm_tx4",
-                                     self.tx4_callback,
-                                     self.coinswap_parameters.session_id)
+        self.send_poll("confirm_tx4", self.tx4_callback)
     
     def tx4_callback(self, result):
         """Once Carol has confirmed receipt of TX4, retrieve
