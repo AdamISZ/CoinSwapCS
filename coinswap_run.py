@@ -164,17 +164,18 @@ def main_cs(test_data=None):
                                           'fail_carol_state': fail_carol_state})
             return wallet.get_balance_by_mixdepth()
         return
-    tx01_amount = int(args[1])
-    #Reset the targetting for backout transactions
-    oldtarget = cs_single().config.get("POLICY", "tx_fees")
-    newtarget = cs_single().config.getint("POLICY", "backout_fee_target")
-    multiplier = float(cs_single().config.get("POLICY", "backout_fee_multiplier"))
-    cs_single().config.set("POLICY", "tx_fees", str(newtarget))
-    tx23fee = estimate_tx_fee((1, 2, 2), 1, txtype='p2shMofN')
-    tx23fee = int(multiplier * tx23fee)
-    tx24_recipient_amount = tx01_amount - tx23fee
-    tx35_recipient_amount = tx01_amount - tx23fee
-    cs_single().config.set("POLICY", "tx_fees", oldtarget)
+    if not options.recover:
+        tx01_amount = int(args[1])
+        #Reset the targetting for backout transactions
+        oldtarget = cs_single().config.get("POLICY", "tx_fees")
+        newtarget = cs_single().config.getint("POLICY", "backout_fee_target")
+        multiplier = float(cs_single().config.get("POLICY", "backout_fee_multiplier"))
+        cs_single().config.set("POLICY", "tx_fees", str(newtarget))
+        tx23fee = estimate_tx_fee((1, 2, 2), 1, txtype='p2shMofN')
+        tx23fee = int(multiplier * tx23fee)
+        tx24_recipient_amount = tx01_amount - tx23fee
+        tx35_recipient_amount = tx01_amount - tx23fee
+        cs_single().config.set("POLICY", "tx_fees", oldtarget)
     #to allow testing of confirm/unconfirm callback for multiple txs
     if isinstance(cs_single().bc_interface, RegtestBitcoinCoreInterface):
         cs_single().bc_interface.tick_forward_chain_interval = 2
