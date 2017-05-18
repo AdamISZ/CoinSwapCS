@@ -88,6 +88,9 @@ global_singleton.session_name = None
 global_singleton.config = SafeConfigParser()
 #This is reset to a full path after load_coinswap_config call
 global_singleton.config_location = 'coinswapcs.cfg'
+#Not currently exposed in config file but could be; it is not expected that
+#confirmation for one block could conceivably take this long
+global_singleton.one_confirm_timeout = 7200
 
 def cs_single():
     return global_singleton

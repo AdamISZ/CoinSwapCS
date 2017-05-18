@@ -103,12 +103,16 @@ class CoinSwapCarol(CoinSwapParticipant):
                 (self.receive_tx3_sig, False, -1),
                  #alice waits for confirms before sending secret; this accounts
                  #for propagation delays.
-                (self.push_tx1, False, cs_single().config.getint(
-                    "TIMEOUT", "propagation_buffer")),
-                (self.receive_secret, False, -1),
+                (self.push_tx1, False,
+                 cs_single().one_confirm_timeout * cs_single().config.getint(
+                     "TIMEOUT", "tx01_confirm_wait")),
+                #we also wait for the confirms our side
+                (self.receive_secret, False,
+                 cs_single().one_confirm_timeout * cs_single().config.getint(
+                     "TIMEOUT", "tx01_confirm_wait")),
                  #alice waits for confirms on TX5 before sending TX4 sig
-                (self.send_tx5_sig, True, 30),
-                (self.receive_tx4_sig, False, -1),
+                (self.send_tx5_sig, True, -1),
+                (self.receive_tx4_sig, False, cs_single().one_confirm_timeout),
                 (self.broadcast_tx4, True, -1)]
 
     def set_handshake_parameters(self):
