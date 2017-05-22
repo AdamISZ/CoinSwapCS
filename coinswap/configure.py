@@ -205,6 +205,15 @@ minimum_amount = 5000000
 maximum_amount = 500000000
 #to reduce load/complexity, an upper limit on the number of concurrent coinswaps
 maximum_concurrent_coinswaps = 3
+#**FEES**
+#Note that fees are by default collected across two different outputs in combination
+#with other (probably much larger) amounts, so a small fee doesn't imply a dust
+#output.
+#The minimum acceptable fee in satoshis for a single coinswap
+minimum_coinswap_fee = 100000
+#Percentage fee for a coinswap (applied as long as it's higher than the above)
+coinswap_fee_percent = 0.5
+#
 """
 
 def lookup_appdata_folder():

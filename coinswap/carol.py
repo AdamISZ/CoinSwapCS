@@ -145,8 +145,6 @@ class CoinSwapCarol(CoinSwapParticipant):
         if not "key_session" in d:
             #TODO validate that it's a real pubkey
             return (False, "no session key from Alice")
-        #immediately set the state file to the correct value
-        self.state_file = self.state_file + self.coinswap_parameters.session_id + '.json'
         if d["source_chain"] != self.source_chain:
             return (False, "source chain was wrong: " + d["source_chain"])
         if d["destination_chain"] != self.destination_chain:
@@ -198,13 +196,21 @@ class CoinSwapCarol(CoinSwapParticipant):
             cslog.debug("pubkeys: " + str(self.coinswap_parameters.pubkeys_complete))
             cslog.debug("timeouts: " + str(self.coinswap_parameters.timeouts_complete))
             return (False, "Coinswap parameters is not complete")
+        #Calculate the fee required for the swap now we have valid data.
+        #The coinswap fee is assessed against tx5 amount because that is the amount
+        #*after* fees.
+        self.coinswap_parameters.set_coinswap_fee(
+            self.coinswap_parameters.fee_policy.get_fee(
+            self.coinswap_parameters.tx5_amount))
         #first entry confirms acceptance of parameters
         to_send = [True,
         self.coinswap_parameters.pubkeys["key_2_2_AC_1"],
         self.coinswap_parameters.pubkeys["key_2_2_CB_0"],
         self.coinswap_parameters.pubkeys["key_TX2_secret"],
         self.coinswap_parameters.pubkeys["key_TX3_lock"],
-        self.coinswap_parameters.tx4_address]
+        self.coinswap_parameters.tx4_address,
+        self.coinswap_parameters.coinswap_fee,
+        self.coinswap_parameters.session_id]
         return (to_send, "OK")
 
     def receive_tx0_hash_tx2sig(self, txid0, hashed_secret, tx2sig):

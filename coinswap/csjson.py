@@ -12,7 +12,7 @@ try:
 except:
     pass
 from .base import (get_current_blockheight, CoinSwapPublicParameters,
-                   prepare_ecdsa_msg)
+                   prepare_ecdsa_msg, FeePolicy)
 from .alice import CoinSwapAlice
 from .carol import CoinSwapCarol
 from .configure import get_log, cs_single
@@ -99,6 +99,7 @@ class CoinSwapCarolJSONServer(jsonrpc.JSONRPC):
         self.carol_class = carol_class
         self.fail_carol_state = fail_carol_state
         self.carols = {}
+        self.fee_policy = FeePolicy(cs_single().config)
         self.update_status()
         jsonrpc.JSONRPC.__init__(self)
 
@@ -130,7 +131,7 @@ class CoinSwapCarolJSONServer(jsonrpc.JSONRPC):
         status["source_chain"] = source_chain
         status["destination_chain"] = destination_chain
         status["cscs_version"] = cs_single().CSCS_VERSION
-        #TODO fees
+        status["fee_policy"] = self.fee_policy.get_policy()
         return status
 
     def jsonrpc_status(self):
@@ -199,6 +200,7 @@ class CoinSwapCarolJSONServer(jsonrpc.JSONRPC):
         tx4address = self.wallet.get_new_addr(1, 1)
         cpp = CoinSwapPublicParameters()
         cpp.set_session_id(sessionid)
+        cpp.set_fee_policy(self.fee_policy)
         cpp.set_tx4_address(tx4address)
         try:
             if self.fail_carol_state:

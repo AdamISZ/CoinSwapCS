@@ -163,6 +163,21 @@ class CoinSwapAlice(CoinSwapParticipant):
         self.coinswap_parameters.set_pubkey("key_TX2_secret", carol_response[0][3])
         self.coinswap_parameters.set_pubkey("key_TX3_lock", carol_response[0][4])
         self.coinswap_parameters.set_tx4_address(carol_response[0][5])
+        proposed_fee = carol_response[0][6]
+        if self.fee_checker:
+            if not self.fee_checker(proposed_fee):
+                return (False, "Server's proposed fee: " + str(proposed_fee) + \
+                        " is not accepted.")
+            else:
+                cslog.info("Server proposed fee: " + str(proposed_fee) + \
+                           ", accepted.")
+        self.coinswap_parameters.set_coinswap_fee(carol_response[0][6])
+        proposed_sessionid = carol_response[0][7]
+        if not len(proposed_sessionid) == 32:
+            return (False, "Invalid sessionid proposal: " + str(proposed_sessionid))
+        self.coinswap_parameters.set_session_id(proposed_sessionid)
+        #The state file name setting had to be deferred until here:
+        self.state_file = self.state_file + proposed_sessionid + ".json"
         if not self.coinswap_parameters.is_complete():
             return (False,
                     "Coinswap public parameter negotiation failed, incomplete.")

@@ -162,6 +162,34 @@ def generate_escrow_redeem_script(hashed_secret, recipient_pubkey, locktime,
     rss = btc.serialize_script(redeem_script)
     return rss
 
+class FeePolicy(object):
+    """An object to encapsulate the fee policy of a server; it needs
+    to serve two functions: (1) to express to a querier what the policy is
+    with some serialization, (2) to be able to calculate the actual fee for
+    a specific client request.
+    """
+    def __init__(self, cfg):
+        #The cfg argument is of the type constructed in configure.py
+        self.cfg = cfg
+        self.minimum_fee = cfg.getint("SERVER", "minimum_coinswap_fee")
+        #This can throw if invalid input, allowing that for now TODO
+        self.percent = float(cfg.get("SERVER", "coinswap_fee_percent"))
+
+    def get_policy(self):
+        return {"minimum_fee": self.minimum_fee, "percent_fee": self.percent}
+
+    def get_fee(self, amount):
+        """Given a coinswap amount in satoshis, return
+        the fee that we require corresponding to it (also in satoshis).
+        """
+        proposed_fee = amount * self.percent / 100.0
+        if proposed_fee < self.minimum_fee:
+            cslog.info("Calculated percentage fee less than minimum allowed, "
+                       "bringing up to minimum: " + str(self.minimum_fee))
+            return self.minimum_fee
+        #Don't care about rounding errors here
+        return int(proposed_fee)
+
 class StateMachine(object):
     """A simple state machine that has integer states,
     incremented on successful execution of corresponding callbacks.
@@ -770,7 +798,8 @@ class CoinSwapRedeemTX23Timeout(CoinSwapTX):
 class CoinSwapParticipant(object):
     __metaclass__ = abc.ABCMeta
 
-    def __init__(self, wallet, state_file, cpp=None, testing_mode=False):
+    def __init__(self, wallet, state_file, cpp=None, testing_mode=False,
+                 fee_checker=None):
         self.testing_mode = testing_mode
         self.coinswap_parameters = cpp
         if self.coinswap_parameters:
@@ -797,6 +826,8 @@ class CoinSwapParticipant(object):
         self.txid5 = None
         self.secret = None
         self.hashed_secret = None
+        #Only used by Alice; fee check callback
+        self.fee_checker = fee_checker
         #currently only used by Carol; TODO
         self.phase2_ready = False
         self.tx4_confirmed = False
@@ -1292,7 +1323,8 @@ class CoinSwapPublicParameters(object):
                           "key_TX3_secret", "key_TX3_lock", "key_session"]
     attr_list = ['tx0_amount', 'tx1_amount', 'tx2_recipient_amount',
                   'tx3_recipient_amount', 'tx4_amount', 'tx5_amount',
-                  'tx4_address', 'tx5_address', 'timeouts', 'pubkeys']
+                  'tx4_address', 'tx5_address', 'timeouts', 'pubkeys',
+                  'coinswap_fee']
     def __init__(self,
                  tx01_amount=None,
                  tx24_recipient_amount=None,
@@ -1306,6 +1338,7 @@ class CoinSwapPublicParameters(object):
         self.addresses_complete = False
         self.tx4_address = None
         self.tx5_address = None
+        self.coinswap_fee = None
         self.timeouts = {}
         self.pubkeys = {}
         self.tx0_amount = tx01_amount
@@ -1314,6 +1347,8 @@ class CoinSwapPublicParameters(object):
         self.tx3_recipient_amount = tx35_recipient_amount
         self.tx4_amount = tx24_recipient_amount
         self.tx5_amount = tx35_recipient_amount
+        #only used by Carol
+        self.fee_policy = None
         if timeoutdata:
             self.set_timeouts(*timeoutdata)
         else:
@@ -1338,6 +1373,23 @@ class CoinSwapPublicParameters(object):
 
     def set_session_id(self, sid):
         self.session_id = sid
+
+    def set_fee_policy(self, fp):
+        """Note that the fee policy attribute is only
+        for convenience of initial setup; it's not
+        required for restart, and so not included in the list
+        of attributes persisted.
+        """
+        assert isinstance(fp, FeePolicy)
+        self.fee_policy = fp
+
+    def set_coinswap_fee(self, fee):
+        """Unlike the fee policy, the actual fee itself
+        produced by that policy is persisted, although
+        theoretically it may not be necessary (since all the output
+        amounts are fixed.
+        """
+        self.coinswap_fee = fee
 
     def serialize(self):
         """All data into a dict (for json persistence).
