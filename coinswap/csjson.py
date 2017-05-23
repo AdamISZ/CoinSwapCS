@@ -197,11 +197,21 @@ class CoinSwapCarolJSONServer(jsonrpc.JSONRPC):
         #Prepare a new CoinSwapCarol instance for this session
         #start with a unique ID of 16 byte entropy:
         sessionid = binascii.hexlify(os.urandom(16))
+        #Logic for mixdepths:
+        #TX4 output is the normal coinswap output, not combined with original.
+        #TX5 output address functions like change, goes back to original.
+        #TX2/3 are unambiguous coinswap outs, since adversary can deduce
+        #who they belong to, no point in isolating them (go back to start).
         tx4address = self.wallet.get_new_addr(1, 1)
+        tx2_carol_address = self.wallet.get_new_addr(0, 1)
+        tx3_carol_address = self.wallet.get_new_addr(0, 1)
+        tx5_carol_address = self.wallet.get_new_addr(0, 1)
         cpp = CoinSwapPublicParameters()
         cpp.set_session_id(sessionid)
         cpp.set_fee_policy(self.fee_policy)
-        cpp.set_tx4_address(tx4address)
+        cpp.set_addr_data(addr4=tx4address, addr_2_carol= tx2_carol_address,
+                          addr_3_carol=tx3_carol_address,
+                          addr_5_carol=tx5_carol_address)
         try:
             if self.fail_carol_state:
                 if not self.set_carol(self.carol_class(self.wallet, 'carolstate',

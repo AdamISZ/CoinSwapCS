@@ -120,7 +120,8 @@ class CoinSwapAlice(CoinSwapParticipant):
                                                             "tx01_confirm_wait"),
                    "source_chain": "BTC",
                    "destination_chain": "BTC",
-                   "amount": self.coinswap_parameters.tx0_amount}
+                   "amount": self.coinswap_parameters.base_amount,
+                   "bitcoin_fee": self.coinswap_parameters.bitcoin_fee}
         self.send(to_send)
         return (True, "Handshake OK")
 
@@ -134,16 +135,13 @@ class CoinSwapAlice(CoinSwapParticipant):
         if not len(carol_response[0]) == 32:
             return (False, "Error: server returned invalid session ID")
         self.coinswap_parameters.set_session_id(carol_response[0])
-        to_send = [self.coinswap_parameters.tx0_amount,
-                   self.coinswap_parameters.tx2_recipient_amount,
-                   self.coinswap_parameters.tx3_recipient_amount,
-                   self.keyset["key_2_2_AC_0"][1],
+        to_send = [self.keyset["key_2_2_AC_0"][1],
                    self.keyset["key_2_2_CB_1"][1],
                    self.keyset["key_TX2_lock"][1],
                    self.keyset["key_TX3_secret"][1],
                    self.coinswap_parameters.timeouts["LOCK0"],
                    self.coinswap_parameters.timeouts["LOCK1"],
-                   self.coinswap_parameters.tx5_address]
+                   self.coinswap_parameters.output_addresses["tx5_address"]]
         self.send(*to_send)
         return (True, "Coinswap parameters sent OK")
 
@@ -162,7 +160,6 @@ class CoinSwapAlice(CoinSwapParticipant):
         self.coinswap_parameters.set_pubkey("key_2_2_CB_0", carol_response[0][2])
         self.coinswap_parameters.set_pubkey("key_TX2_secret", carol_response[0][3])
         self.coinswap_parameters.set_pubkey("key_TX3_lock", carol_response[0][4])
-        self.coinswap_parameters.set_tx4_address(carol_response[0][5])
         proposed_fee = carol_response[0][6]
         if self.fee_checker:
             if not self.fee_checker(proposed_fee):
@@ -172,7 +169,19 @@ class CoinSwapAlice(CoinSwapParticipant):
                 cslog.info("Server proposed fee: " + str(proposed_fee) + \
                            ", accepted.")
         self.coinswap_parameters.set_coinswap_fee(carol_response[0][6])
-        proposed_sessionid = carol_response[0][7]
+        proposed_blinding_amount = carol_response[0][7]
+        #Is this blinding factor good enough according to our wishes?
+        if proposed_blinding_amount < cs_single().config.getint("POLICY",
+                                                        "minimum_blinding_amount"):
+            return (False, "Blinding amount is too small for us: " + \
+                    str(proposed_blinding_amount) + "but we require at least: " + \
+            str(cs_single().config.getint("POLICY", "minimum_blinding_amount")))
+        self.coinswap_parameters.set_blinding_amount(proposed_blinding_amount)
+        self.coinswap_parameters.set_addr_data(addr4=carol_response[0][5],
+                                               addr_2_carol=carol_response[0][8],
+                                               addr_3_carol=carol_response[0][9],
+                                               addr_5_carol=carol_response[0][10])
+        proposed_sessionid = carol_response[0][11]
         if not len(proposed_sessionid) == 32:
             return (False, "Invalid sessionid proposal: " + str(proposed_sessionid))
         self.coinswap_parameters.set_session_id(proposed_sessionid)
@@ -203,11 +212,8 @@ class CoinSwapAlice(CoinSwapParticipant):
         signing_pubkeys = [[btc.privkey_to_pubkey(x)] for x in self.signing_privkeys]
         signing_redeemscripts = [btc.address_to_script(
             x['address']) for x in self.initial_utxo_inputs.values()]
-        #calculate size of change output; default p2pkh assumed
-        fee = estimate_tx_fee(len(self.initial_utxo_inputs), 2)
-        cslog.debug("got tx0 fee: " + str(fee))
-        cslog.debug("for tx0 input amount: " + str(total_in))
-        change_amount = total_in - self.coinswap_parameters.tx0_amount - fee
+        change_amount = total_in - self.coinswap_parameters.tx0_amount - \
+            self.coinswap_parameters.bitcoin_fee
         cslog.debug("got tx0 change amount: " + str(change_amount))
         #get a change address in same mixdepth
         change_address = self.wallet.get_internal_addr(0)
@@ -233,10 +239,12 @@ class CoinSwapAlice(CoinSwapParticipant):
                 self.coinswap_parameters.pubkeys["key_2_2_AC_1"],
                 self.coinswap_parameters.pubkeys["key_TX2_secret"],
                 utxo_in=utxo_in,
-                recipient_amount=self.coinswap_parameters.tx2_recipient_amount,
+                recipient_amount=self.coinswap_parameters.tx2_amounts["script"],
                 hashed_secret=self.hashed_secret,
                 absolutelocktime=self.coinswap_parameters.timeouts["LOCK0"],
-                refund_pubkey=self.coinswap_parameters.pubkeys["key_TX2_lock"])
+                refund_pubkey=self.coinswap_parameters.pubkeys["key_TX2_lock"],
+        carol_only_address=self.coinswap_parameters.output_addresses["tx2_carol_address"],
+        carol_only_amount=self.coinswap_parameters.tx2_amounts["carol"])
         #Create our own signature for TX2
         self.tx2.sign_at_index(self.keyset["key_2_2_AC_0"][0], 0)
         sigtx2 = self.tx2.signatures[0][0]
@@ -270,10 +278,13 @@ class CoinSwapAlice(CoinSwapParticipant):
                 self.coinswap_parameters.pubkeys["key_2_2_CB_1"],
                 self.coinswap_parameters.pubkeys["key_TX3_secret"],
                 utxo_in=self.txid1,
-                recipient_amount=self.coinswap_parameters.tx3_recipient_amount,
+                recipient_amount=self.coinswap_parameters.tx3_amounts["script"],
                 hashed_secret=self.hashed_secret,
                 absolutelocktime=self.coinswap_parameters.timeouts["LOCK1"],
-                refund_pubkey=self.coinswap_parameters.pubkeys["key_TX3_lock"])
+                refund_pubkey=self.coinswap_parameters.pubkeys["key_TX3_lock"],
+        carol_only_address=self.coinswap_parameters.output_addresses["tx3_carol_address"],
+        carol_only_amount=self.coinswap_parameters.tx3_amounts["carol"])
+        cslog.info("Alice is working with this TX3: " + str(self.tx3))
         if not self.tx3.include_signature(0, sigtx3):
             return (False, "Counterparty signature for TX3 invalid.")
         #TX3 must be watched for updates
@@ -347,8 +358,10 @@ class CoinSwapAlice(CoinSwapParticipant):
             self.coinswap_parameters.pubkeys["key_2_2_CB_0"],
                                 self.coinswap_parameters.pubkeys["key_2_2_CB_1"],
                                 utxo_in=self.txid1,
-                                destination_address=self.coinswap_parameters.tx5_address,
-                                destination_amount=self.coinswap_parameters.tx5_amount)
+                                destination_address=self.coinswap_parameters.output_addresses["tx5_address"],
+                                destination_amount=self.coinswap_parameters.tx5_amounts["alice"],
+        carol_change_address=self.coinswap_parameters.output_addresses["tx5_carol_address"],
+        carol_change_amount=self.coinswap_parameters.tx5_amounts["carol"])
         if not self.tx5.include_signature(0, sig):
             return (False, "Counterparty signature for TX5 not valid; backing out.")
         return (True, "Counterparty signature for TX5 OK.")
@@ -385,8 +398,10 @@ class CoinSwapAlice(CoinSwapParticipant):
         self.tx4 = CoinSwapTX45.from_params(self.coinswap_parameters.pubkeys["key_2_2_AC_0"],
                                         self.coinswap_parameters.pubkeys["key_2_2_AC_1"],
                                         utxo_in=utxo_in,
-                                        destination_address=self.coinswap_parameters.tx4_address,
-                                        destination_amount=self.coinswap_parameters.tx4_amount)
+                                        destination_address=self.coinswap_parameters.output_addresses["tx4_address"],
+                                        destination_amount=self.coinswap_parameters.tx4_amounts["carol"],
+                                        carol_change_address=None,
+                                        carol_change_amount=None)
         self.tx4.sign_at_index(self.keyset["key_2_2_AC_0"][0], 0)
         sig = self.tx4.signatures[0][0]
         self.send(sig, self.tx5.txid)
@@ -437,10 +452,10 @@ class CoinSwapAlice(CoinSwapParticipant):
         elif status["busy"] or status["maximum_amount"] < 0:
             cslog.info("Server is not currently available")
             reactor.stop()
-        elif self.coinswap_parameters.tx0_amount < status["minimum_amount"]:
+        elif self.coinswap_parameters.base_amount < status["minimum_amount"]:
             cslog.info("Amount too small for server")
             reactor.stop()
-        elif self.coinswap_parameters.tx0_amount > status["maximum_amount"]:
+        elif self.coinswap_parameters.base_amount > status["maximum_amount"]:
             cslog.info("Amount too large for server")
             reactor.stop()
         else:

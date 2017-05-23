@@ -16,6 +16,7 @@ import abc
 import sys
 from pprint import pformat
 import json
+from functools import wraps
 
 COINSWAP_SECRET_ENTROPY_BYTES = 14
 
@@ -342,7 +343,9 @@ class StateMachine(object):
 class CoinSwapTX(object):
     """A generic bitcoin transaction construct,
     currently limited to one output scriptPubKey
-    and one (optional) change.
+    and one (optional) change. "Change" here is notional, since
+    this class is not encapsulating a wallet; so it can be an output
+    to a different party (this is used in backouts here).
     Note that the positions of the pay, change outputs
     are automatically randomized; but inputs are not, so
     any randomization there must be implemented by the caller.
@@ -366,6 +369,7 @@ class CoinSwapTX(object):
                  change_address=None,
                  output_amount=None,
                  change_amount=None,
+                 change_random=True,
                  signing_redeem_scripts=None,
                  signing_pubkeys=None,
                  signatures=None,
@@ -397,7 +401,7 @@ class CoinSwapTX(object):
         if change_address:
             change_out = {"address": self.change_address,
                               "value": self.change_amount}
-            if random.random() < 0.5:
+            if (not change_random) or (random.random() < 0.5):
                 self.outs = [pay_out, change_out]
                 self.change_out_index = 1
                 self.pay_out_index = 0
@@ -590,7 +594,7 @@ class CoinSwapTX01(CoinSwapTX):
 class CoinSwapSpend2_2(CoinSwapTX):
     """Generic class for any transaction that spends
     only from a single input scriptPubkey which is a 2 of 2
-    multisig.
+    multisig. Supports multiple outputs.
     """
     def sign_at_index(self, privkey, key_index):
         assert btc.privkey_to_pubkey(privkey) == self.signing_pubkeys[0][key_index]
@@ -650,7 +654,9 @@ class CoinSwapTX45(CoinSwapSpend2_2):
                  pubkey2,
                  utxo_in,
                  destination_address,
-                 destination_amount):
+                 destination_amount,
+                 carol_change_address,
+                 carol_change_amount):
         obj = cls()
         scr, addr = msig_data_from_pubkeys([pubkey1, pubkey2], 2)
         signatures = [[]]
@@ -660,12 +666,17 @@ class CoinSwapTX45(CoinSwapSpend2_2):
                                            output_address=destination_address,
                                            output_amount=destination_amount,
                                            signing_pubkeys=[[pubkey1, pubkey2]],
-                                    signing_redeem_scripts=signing_redeem_scripts)
+                                    signing_redeem_scripts=signing_redeem_scripts,
+                                    change_address=carol_change_address,
+                                    change_amount=carol_change_amount,
+                                    change_random=False)
         return obj
 
 class CoinSwapTX23(CoinSwapSpend2_2):
     """Pays from 2of2 utxo (already broadcast), to
-    a custom script: pay to (counterparty+secret reveal) or (me after timeout).
+    (a) a custom script: pay to (counterparty+secret reveal) or (me after timeout).
+    (b) an output to one party only ("Carol"); this uses "change" as noted in the
+    CoinSwapTX class.
     """
     def __init__(self):
         pass
@@ -685,7 +696,9 @@ class CoinSwapTX23(CoinSwapSpend2_2):
                  recipient_amount,
                  hashed_secret,
                  absolutelocktime,
-                 refund_pubkey):
+                 refund_pubkey,
+                 carol_only_address,
+                 carol_only_amount):
         obj = cls()
         #Non-optional arguments are used to construct the 2of2 address:
         scr, addr = msig_data_from_pubkeys([pubkey1, pubkey2], 2)
@@ -699,7 +712,7 @@ class CoinSwapTX23(CoinSwapSpend2_2):
                                                   refund_pubkey)
         output_address = btc.p2sh_scriptaddr(obj.custom_redeem_script,
                                              magicbyte=get_p2sh_vbyte())
-        
+
         #Note that the locktime is *not* passed to the super constructor,
         #as it's the locktime applied to the output (with CLTV),
         #not this transaction.
@@ -708,7 +721,10 @@ class CoinSwapTX23(CoinSwapSpend2_2):
                                            output_amount=recipient_amount,
                                            signing_pubkeys=[[pubkey1, pubkey2]],
                                            signing_redeem_scripts=signing_redeem_scripts,
-                                           signatures=signatures)
+                                           signatures=signatures,
+                                           change_address=carol_only_address,
+                                           change_amount=carol_only_amount,
+                                           change_random=False)
         return obj
 
 class CoinSwapRedeemTX23Secret(CoinSwapTX):
@@ -826,6 +842,8 @@ class CoinSwapParticipant(object):
         self.txid5 = None
         self.secret = None
         self.hashed_secret = None
+        #Created on the fly for redeeming a backout (same mixdepth as origin)
+        self.backout_redeem_addr = None
         #Only used by Alice; fee check callback
         self.fee_checker = fee_checker
         #currently only used by Carol; TODO
@@ -987,6 +1005,9 @@ class CoinSwapParticipant(object):
             return
         #Handling for later states depends on Alice/Carol
         if isinstance(self, CoinSwapAlice):
+            #for redeeming, we get a new address on the fly (not pre-agreed)
+            if not self.backout_redeem_addr:
+                self.backout_redeem_addr = self.wallet.get_new_addr(0, 1)
             if self.sm.state in [7, 8, 9]:
                 #Alice has broadcast TX0 but has not released the secret;
                 #therefore it's entirely safe to just wait for L0 and then
@@ -1011,8 +1032,8 @@ class CoinSwapParticipant(object):
                     self.coinswap_parameters.timeouts["LOCK0"],
                     self.coinswap_parameters.pubkeys["key_TX2_lock"],
                     self.tx2.txid + ":0",
-                    self.coinswap_parameters.tx4_amount,
-                    self.coinswap_parameters.tx5_address)
+                    self.coinswap_parameters.tx2_amounts["script"],
+                    self.backout_redeem_addr)
                 tx23_redeem.sign_at_index(self.keyset["key_TX2_lock"][0], 0)
                 msg, success = tx23_redeem.push()
                 if not success:
@@ -1021,7 +1042,7 @@ class CoinSwapParticipant(object):
                     cslog.info(tx23_redeem.fully_signed_tx)
                 else:
                     cslog.info("Successfully reclaimed funds via TX2, to address: " +\
-                              self.coinswap_parameters.tx5_address)
+                              self.backout_redeem_addr)
                 return self.quit(False, not success)
             elif self.sm.state == 10:
                 #Carol has received the secret, but we don't have the TX5 sig.
@@ -1037,8 +1058,8 @@ class CoinSwapParticipant(object):
                             self.coinswap_parameters.timeouts["LOCK1"],
                             self.coinswap_parameters.pubkeys["key_TX3_lock"],
                             self.tx3.txid + ":0",
-                            self.coinswap_parameters.tx5_amount,
-                            self.coinswap_parameters.tx5_address)
+                            self.coinswap_parameters.tx3_amounts["script"],
+                            self.backout_redeem_addr)
                 tx23_secret.sign_at_index(self.keyset["key_TX3_secret"][0], 0)
                 cslog.info("Broadcasting TX3 redeem: ")
                 msg, success = tx23_secret.push()
@@ -1049,7 +1070,7 @@ class CoinSwapParticipant(object):
                     cslog.info(tx23_secret.fully_signed_tx)
                 else:
                     cslog.info("Successfully reclaimed funds via TX3, to address: " +\
-                              self.coinswap_parameters.tx5_address)
+                              self.backout_redeem_addr)
                 return self.quit(False, not success)
             elif self.sm.state in [11, 12, 13]:
                 #We are now in possession of a valid TX5 signature; either we
@@ -1079,6 +1100,9 @@ class CoinSwapParticipant(object):
             else:
                 assert False
         elif isinstance(self, CoinSwapCarol):
+            #for redeeming, we get a new address on the fly (not pre-agreed)
+            if not self.backout_redeem_addr:
+                self.backout_redeem_addr = self.wallet.get_new_addr(0, 1)
             if self.sm.state in [6, 7]:
                 #This is by far the trickiest case.
                 #
@@ -1260,13 +1284,13 @@ class CoinSwapParticipant(object):
             report_msg.append("Pay out transaction from 2-of-2 to Carol:")
             rtxid4 = self.tx4.txid if self.tx4 else self.txid4
             report_msg.append("Txid: " + str(rtxid4))
-            report_msg.append("Receiving address: " + self.coinswap_parameters.tx4_address)
-            report_msg.append("Amount: " + str(self.coinswap_parameters.tx4_amount))
+            report_msg.append("Receiving address: " + self.coinswap_parameters.output_addresses["tx4_address"])
+            report_msg.append("Amount: " + str(self.coinswap_parameters.tx4_amounts["carol"]))
             report_msg.append("Pay out transaction from 2-of-2 to Alice:")
             rtxid5 = self.tx5.txid if self.tx5 else self.txid5
             report_msg.append("Txid: " + str(rtxid5))
-            report_msg.append("Receiving address: " + self.coinswap_parameters.tx5_address)
-            report_msg.append("Amount: " + str(self.coinswap_parameters.tx5_amount))
+            report_msg.append("Receiving address: " + self.coinswap_parameters.output_addresses["tx5_address"])
+            report_msg.append("Amount: " + str(self.coinswap_parameters.tx5_amounts["alice"]))
         else:
             if not failed:
                 report_msg = ["Coinswap is finished and funds reclaimed, but we "
@@ -1321,14 +1345,28 @@ class CoinSwapPublicParameters(object):
     required_key_names = ["key_2_2_AC_0", "key_2_2_AC_1", "key_2_2_CB_0",
                           "key_2_2_CB_1", "key_TX2_secret", "key_TX2_lock",
                           "key_TX3_secret", "key_TX3_lock", "key_session"]
-    attr_list = ['tx0_amount', 'tx1_amount', 'tx2_recipient_amount',
-                  'tx3_recipient_amount', 'tx4_amount', 'tx5_amount',
-                  'tx4_address', 'tx5_address', 'timeouts', 'pubkeys',
-                  'coinswap_fee']
+    attr_list = ['tx0_amount', 'tx1_amount', 'tx2_amounts',
+                  'tx3_amounts', 'tx4_amounts', 'tx5_amounts',
+                  'output_addresses', 'timeouts', 'pubkeys',
+                  'coinswap_fee', 'blinding_amount', 'bitcoin_fee']
+
+    def trigger_complete(func):
+        """triggers setting of all transaction amounts
+        once the base data is set by caller.
+        """
+        @wraps(func)
+        def func_wrapper(inst, *args, **kwargs):
+            func(inst, *args, **kwargs)
+            if all([inst.bitcoin_fee, inst.coinswap_fee,
+                    inst.blinding_amount, inst.base_amount]):
+                inst.set_amounts()
+        return func_wrapper
+
     def __init__(self,
-                 tx01_amount=None,
-                 tx24_recipient_amount=None,
-                 tx35_recipient_amount=None,
+                 base_amount=None,
+                 blinding_amount=None,
+                 coinswap_fee=None,
+                 bitcoin_fee=None,
                  timeoutdata=None,
                  addressdata=None,
                  pubkeydata=None):
@@ -1336,17 +1374,23 @@ class CoinSwapPublicParameters(object):
         self.timeouts_complete = False
         self.pubkeys_complete = False
         self.addresses_complete = False
-        self.tx4_address = None
-        self.tx5_address = None
+        self.output_addresses = {}
+        self.bitcoin_fee = None
         self.coinswap_fee = None
+        self.base_amount = None
+        self.blinding_amount = None
+        self.set_coinswap_fee(coinswap_fee)
+        self.set_bitcoin_fee(bitcoin_fee)
+        self.set_blinding_amount(blinding_amount)
+        self.set_base_amount(base_amount)
         self.timeouts = {}
         self.pubkeys = {}
-        self.tx0_amount = tx01_amount
-        self.tx1_amount = tx01_amount
-        self.tx2_recipient_amount = tx24_recipient_amount
-        self.tx3_recipient_amount = tx35_recipient_amount
-        self.tx4_amount = tx24_recipient_amount
-        self.tx5_amount = tx35_recipient_amount
+        self.tx0_amount = None
+        self.tx1_amount = None
+        self.tx2_amounts = {}
+        self.tx3_amounts = {}
+        self.tx4_amounts = {}
+        self.tx5_amounts = {}
         #only used by Carol
         self.fee_policy = None
         if timeoutdata:
@@ -1359,20 +1403,17 @@ class CoinSwapPublicParameters(object):
         if pubkeydata:
             self.set_pubkey_data(pubkeydata)
 
-    def set_tx01_amounts(self, amt):
-        self.tx0_amount = amt
-        self.tx1_amount = amt
+    @trigger_complete
+    def set_base_amount(self, amt):
+        self.base_amount = amt
 
-    def set_tx24_recipient_amounts(self, amt):
-        self.tx2_recipient_amount = amt
-        self.tx4_amount = amt
+    @trigger_complete
+    def set_bitcoin_fee(self, fee):
+        self.bitcoin_fee = fee
 
-    def set_tx35_recipient_amounts(self, amt):
-        self.tx3_recipient_amount = amt
-        self.tx5_amount = amt
-
-    def set_session_id(self, sid):
-        self.session_id = sid
+    @trigger_complete
+    def set_blinding_amount(self, amt):
+        self.blinding_amount = amt
 
     def set_fee_policy(self, fp):
         """Note that the fee policy attribute is only
@@ -1383,6 +1424,7 @@ class CoinSwapPublicParameters(object):
         assert isinstance(fp, FeePolicy)
         self.fee_policy = fp
 
+    @trigger_complete
     def set_coinswap_fee(self, fee):
         """Unlike the fee policy, the actual fee itself
         produced by that policy is persisted, although
@@ -1390,6 +1432,43 @@ class CoinSwapPublicParameters(object):
         amounts are fixed.
         """
         self.coinswap_fee = fee
+
+    def set_amounts(self):
+        self.set_tx0_amount()
+        self.set_tx1_amount()
+        self.set_tx2_amounts()
+        self.set_tx3_amounts()
+        self.set_tx4_amounts()
+        self.set_tx5_amounts()
+
+    def set_tx5_amounts(self):
+        self.tx5_amounts["alice"] = self.base_amount
+        self.tx5_amounts["carol"] = self.blinding_amount + self.coinswap_fee + \
+            self.bitcoin_fee * 2
+
+    def set_tx4_amounts(self):
+        self.tx4_amounts["carol"] = self.base_amount + self.coinswap_fee + \
+            self.bitcoin_fee * 2
+
+    def set_tx0_amount(self):
+        self.tx0_amount = self.base_amount + self.coinswap_fee + \
+            self.bitcoin_fee * 4
+
+    def set_tx1_amount(self):
+        self.tx1_amount = self.blinding_amount + self.base_amount + \
+            self.coinswap_fee + self.bitcoin_fee * 4
+
+    def set_tx2_amounts(self):
+        self.tx2_amounts["script"] = self.base_amount + self.bitcoin_fee
+        self.tx2_amounts["carol"] = self.coinswap_fee + self.bitcoin_fee
+
+    def set_tx3_amounts(self):
+        self.tx3_amounts["script"] = self.base_amount + self.bitcoin_fee
+        self.tx3_amounts["carol"] = self.blinding_amount + self.coinswap_fee + \
+            self.bitcoin_fee
+
+    def set_session_id(self, sid):
+        self.session_id = sid
 
     def serialize(self):
         """All data into a dict (for json persistence).
@@ -1421,18 +1500,23 @@ class CoinSwapPublicParameters(object):
         if set(self.pubkeys.keys()) == set(self.required_key_names):
             self.pubkeys_complete = True
 
-    def set_tx4_address(self, addr):
-        self.tx4_address = addr
-        if self.tx5_address: self.addresses_complete = True
-
-    def set_tx5_address(self, addr):
-        self.tx5_address = addr
-        if self.tx4_address: self.addresses_complete = True
-
-    def set_addr_data(self, addr4, addr5):
-        self.set_tx4_address(addr4)
-        self.set_tx5_address(addr5)
-        self.addresses_complete = True
+    def set_addr_data(self, addr4=None, addr5=None, addr_2_carol=None,
+                      addr_3_carol=None, addr_5_carol=None):
+        if addr4:
+            self.output_addresses["tx4_address"] = addr4
+        if addr5:
+            self.output_addresses["tx5_address"] = addr5
+        if addr_2_carol:
+            self.output_addresses["tx2_carol_address"] = addr_2_carol
+        if addr_3_carol:
+            self.output_addresses["tx3_carol_address"] = addr_3_carol
+        if addr_5_carol:
+            self.output_addresses["tx5_carol_address"] = addr_5_carol
+        if all([x in self.output_addresses for x in ["tx4_address", "tx5_address",
+                                                     "tx2_carol_address",
+                                                     "tx3_carol_address",
+                                                     "tx5_carol_address"]]):
+            self.addresses_complete = True
 
     def set_pubkey_data(self, pubkeydata):
         for k, v in pubkeydata:
