@@ -126,12 +126,6 @@ def runcase(alice_class, carol_class, fail_alice_state=None, fail_carol_state=No
     reactor.run()
     return (alices, carol_bbmb, wallets[num_alices]['wallet'])
 
-def assert_funds_balance(expected_amt, funds_spent, funds_received):
-    assert funds_spent > expected_amt, "Expected spent, Actual spent: " + \
-                str(expected_amt) + "," + str(funds_spent)
-    assert funds_received > expected_amt, "Expected received, Actual received: " + \
-           str(expected_amt) + "," + str(funds_received)
-
 def test_run_both(setup_wallets, runtype):
     #hack to account for the fact that Carol does not even run
     #if the handshake is bad; this is done to force the reactor to stop.
@@ -151,28 +145,52 @@ def test_run_both(setup_wallets, runtype):
     #objects are set at the start, but are references so updated.
     #Check the wallet states reflect the expected updates.
     #TODO handle multiple alices with different amounts against one Carol.
-    expected_amt = amounts[0] - reasonable_fee_maximum
+    if runtype == "badhandshake":
+        for a in alices:
+            a.bbma = a.wallet.get_balance_by_mixdepth(verbose=False)
+
+    expected_spent = reasonable_fee_maximum*4 + cs_single(
+        ).config.getint("SERVER", "minimum_coinswap_fee")
     if runtype in alice_funds_not_moved_cases:
         for i, alice in enumerate(alices):
             assert alice.bbmb[0] == alice.bbma[0]
-    else:
+    elif runtype in ["cooperative", "cbadreceivetx4sig", "ra11", "rc8", "rc9"]:
+        #in all of these cases Alice's payment is complete
         for i, alice in enumerate(alices):
             funds_spent = alice.bbmb[0] - alice.bbma[0]
             funds_received = alice.bbma[1] - alice.bbmb[1]
-            assert_funds_balance(expected_amt, funds_spent, funds_received)
+            assert funds_spent - funds_received <= expected_spent + reasonable_fee_maximum
+    else:
+        #Ensure Alice did not pay too much and only spent back to 0 depth
+        for i, alice in enumerate(alices):
+            assert alice.bbma[1] == 0
+            funds_spent = alice.bbmb[0] - alice.bbma[0]
+            assert funds_spent <= expected_spent
+
     #Carol is handled a bit differently, since Carol instances are initiated on
     #the fly, we instead query the wallet object directly for the final balances.
     sync_wallet(carol_wallet)
     carol_bbma = carol_wallet.get_balance_by_mixdepth(verbose=False)
     if runtype in carol_funds_not_moved_cases:
-        assert carol_bbma[0] == carol_bbmb[0]
-    else:
+        assert carol_bbma[0] >= carol_bbmb[0]
+        assert carol_bbma[0] - carol_bbmb[0] <= reasonable_fee_maximum + cs_single(
+            ).config.getint("SERVER", "minimum_coinswap_fee")
+    elif runtype in ["cooperative", "rc9"]:
         funds_spent = carol_bbmb[0] - carol_bbma[0]
         funds_received = carol_bbma[1] - carol_bbmb[1]
-        assert_funds_balance(expected_amt, funds_spent, funds_received)
+        assert funds_received - funds_spent >= cs_single(
+            ).config.getint("SERVER", "minimum_coinswap_fee") - reasonable_fee_maximum
+    else:
+        #All cases of backout and funds have moved
+        assert carol_bbmb[1] == 0
+        #Here we assert carol did not lose money; the alice checks are sufficient
+        #to ensure carol didn't get too much
+        assert carol_bbma[0] - carol_bbmb[0] > 0
 
 @pytest.fixture(scope="module")
 def setup_wallets():
     log.startLogging(sys.stdout)    
     load_coinswap_config()
+    #need to give up waiting for confirms artificially quickly
+    cs_single().one_confirm_timeout = 20
     cs_single().num_entities_running = 0

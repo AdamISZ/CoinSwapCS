@@ -24,6 +24,18 @@ import json
 
 cslog = get_log()
 
+def cli_fee_checker(self, fee):
+        print("The server proposes the following coinswap fee: " + str(fee) + ""
+              ", which is: " + str(float(
+                  fee)*100/self.coinswap_parameters.tx5_amount) + "% of your "
+              "transaction size " + str(self.coinswap_parameters.tx5_amount))
+        if not raw_input("Do you accept (y/n)?") == "y":
+            print("You rejected the fees, quitting.")
+            return False
+        else:
+            print("You accepted the fee, continuing ...")
+            return True
+
 def parse_server_string(server_string):
     scheme, server, port = server_string.split(":")
     print("got this scheme, server, port: ", scheme, server, port)
@@ -149,6 +161,8 @@ def main_cs(test_data=None):
         cs_single().bc_interface.grab_coins(wallet.get_new_addr(0, 0), 2.0)
         time.sleep(3)
     sync_wallet(wallet, fast=options.fastsync)
+    if test_data:
+        cs_single().bc_interface.wallet_synced = True
     wallet.used_coins = None
     if options.serve:
         #sanity check that client params were not provided:
@@ -165,16 +179,17 @@ def main_cs(test_data=None):
             return wallet.get_balance_by_mixdepth()
         return
     if not options.recover:
-        tx01_amount = int(args[1])
+        target_amount = int(args[1])
         #Reset the targetting for backout transactions
+        #TODO must be removed/changed for updated fees handling
         oldtarget = cs_single().config.get("POLICY", "tx_fees")
         newtarget = cs_single().config.getint("POLICY", "backout_fee_target")
         multiplier = float(cs_single().config.get("POLICY", "backout_fee_multiplier"))
         cs_single().config.set("POLICY", "tx_fees", str(newtarget))
         tx23fee = estimate_tx_fee((1, 2, 2), 1, txtype='p2shMofN')
         tx23fee = int(multiplier * tx23fee)
-        tx24_recipient_amount = tx01_amount - tx23fee
-        tx35_recipient_amount = tx01_amount - tx23fee
+        tx24_recipient_amount = target_amount - tx23fee
+        tx35_recipient_amount = target_amount - tx23fee
         cs_single().config.set("POLICY", "tx_fees", oldtarget)
     #to allow testing of confirm/unconfirm callback for multiple txs
     if isinstance(cs_single().bc_interface, RegtestBitcoinCoreInterface):
@@ -202,9 +217,10 @@ def main_cs(test_data=None):
         tx5address = wallet.get_new_addr(1, 1)
     #instantiate the parameters, but don't yet have the ephemeral pubkeys
     #or destination addresses.
-    cpp = CoinSwapPublicParameters(tx01_amount, tx24_recipient_amount,
-                                   tx35_recipient_amount)
-    cpp.set_tx5_address(tx5address)
+    #TODO figure out best estimate incl. priority
+    btcfee_est = estimate_tx_fee((1, 2, 2), 1, txtype='p2shMofN')
+    cpp = CoinSwapPublicParameters(base_amount=target_amount, bitcoin_fee=btcfee_est)
+    cpp.set_addr_data(addr5=tx5address)
     testing_mode = True if test_data else False
     aliceclass = alt_class if test_data and alt_class else CoinSwapAlice
     if test_data and fail_alice_state:

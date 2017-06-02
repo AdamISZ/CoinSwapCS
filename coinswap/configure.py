@@ -145,6 +145,11 @@ lock_client = 100
 #read them; editing could make a failed coinswap unrecoverable!
 sessions_dir = sessions
 [POLICY]
+#Server should "blind" the amount of his side of the swap by adding an amount,
+#here you can set the minimum acceptable to you, i.e. if you set 1000000, you
+#require that the difference between your output and the server's output is at
+#least 0.1BTC.
+minimum_blinding_amount = 1000000
 # for dust sweeping, try merge_algorithm = gradual
 # for more rapid dust sweeping, try merge_algorithm = greedy
 # for most rapid dust sweeping, try merge_algorithm = greediest
@@ -205,6 +210,22 @@ minimum_amount = 5000000
 maximum_amount = 500000000
 #to reduce load/complexity, an upper limit on the number of concurrent coinswaps
 maximum_concurrent_coinswaps = 3
+#**FEES**
+#Note that fees are by default collected across two different outputs in combination
+#with other (probably much larger) amounts, so a small fee doesn't imply a dust
+#output.
+#The minimum acceptable fee in satoshis for a single coinswap
+minimum_coinswap_fee = 100000
+#Percentage fee for a coinswap (applied as long as it's higher than the above)
+coinswap_fee_percent = 0.5
+#**
+#An amount used to blind/disconnect the two coin flows; setting it too small
+#makes it too easy to correlate the transactions, making it too large could be
+#a problem for your liquidity. In satoshis. Random value is chosen between
+#maximum and minimum (unless too large for your wallet, then reduced but never
+#below the minimum).
+blinding_amount_min = 2000000
+blinding_amount_max = 50000000
 """
 
 def lookup_appdata_folder():
