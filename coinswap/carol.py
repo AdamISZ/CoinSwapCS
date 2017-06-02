@@ -232,6 +232,8 @@ class CoinSwapCarol(CoinSwapParticipant):
         self.coinswap_parameters.output_addresses["tx3_carol_address"],
         self.coinswap_parameters.output_addresses["tx5_carol_address"],
         self.coinswap_parameters.session_id]
+        #We can now initiate file logging also; .log will be automatically appended
+        cs_single().logs_path = os.path.join(cs_single().homedir, "logs", self.state_file)
         return (to_send, "OK")
 
     def receive_tx0_hash_tx2sig(self, txid0, hashed_secret, tx2sig):

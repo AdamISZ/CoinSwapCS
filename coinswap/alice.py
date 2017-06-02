@@ -187,6 +187,8 @@ class CoinSwapAlice(CoinSwapParticipant):
         self.coinswap_parameters.set_session_id(proposed_sessionid)
         #The state file name setting had to be deferred until here:
         self.state_file = self.state_file + proposed_sessionid + ".json"
+        #We can now initiate file logging also; .log will be automatically appended
+        cs_single().logs_path = os.path.join(cs_single().homedir, "logs", self.state_file)
         if not self.coinswap_parameters.is_complete():
             return (False,
                     "Coinswap public parameter negotiation failed, incomplete.")

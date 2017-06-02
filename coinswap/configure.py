@@ -45,7 +45,7 @@ class AttributeDict(object):
     """
 
     def __init__(self, **entries):
-        self.currentsession = None
+        self.currentlogpath = None
         self.add_entries(**entries)
 
     def add_entries(self, **entries):
@@ -56,15 +56,12 @@ class AttributeDict(object):
                 self.__dict__[key] = value
 
     def __setattr__(self, name, value):
-        if name == 'session_name' and value != self.currentsession:
-            self.currentsession = value
+        if name == 'logs_path' and value != self.currentlogpath:
+            self.currentlogpath = value
             logFormatter = logging.Formatter(
                 ('%(asctime)s [%(threadName)-12.12s] '
                  '[%(levelname)-5.5s]  %(message)s'))
-            logsdir = os.path.join(os.path.dirname(
-            global_singleton.config_location), "logs")
-            fileHandler = logging.FileHandler(
-                logsdir + '/{}.log'.format(value))
+            fileHandler = logging.FileHandler(value + ".log")
             fileHandler.setFormatter(logFormatter)
             log.addHandler(fileHandler)
 
@@ -84,7 +81,7 @@ global_singleton.homedir = None
 global_singleton.BITCOIN_DUST_THRESHOLD = 2730
 global_singleton.DUST_THRESHOLD = 10 * global_singleton.BITCOIN_DUST_THRESHOLD
 global_singleton.bc_interface = None
-global_singleton.session_name = None
+global_singleton.logs_path = None
 global_singleton.config = SafeConfigParser()
 #This is reset to a full path after load_coinswap_config call
 global_singleton.config_location = 'coinswapcs.cfg'
@@ -254,6 +251,11 @@ def load_coinswap_config(config_path=None, bs=None):
         global_singleton.homedir = config_path
     if not os.path.exists(global_singleton.homedir):
         os.makedirs(global_singleton.homedir)
+    #prepare folders for wallets and logs
+    if not os.path.exists(os.path.join(global_singleton.homedir, "wallets")):
+        os.makedirs(os.path.join(global_singleton.homedir, "wallets"))
+    if not os.path.exists(os.path.join(global_singleton.homedir, "logs")):
+        os.makedirs(os.path.join(global_singleton.homedir, "logs"))
     global_singleton.config_location = os.path.join(
         global_singleton.homedir, global_singleton.config_location)
     loadedFiles = global_singleton.config.read([global_singleton.config_location
