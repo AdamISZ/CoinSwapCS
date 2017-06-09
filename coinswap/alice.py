@@ -61,15 +61,15 @@ class CoinSwapAlice(CoinSwapParticipant):
                 (self.receive_txid1_tx23sig, False, -1),
                 (self.send_tx3, True, -1),
                 (self.broadcast_tx0, False, -1),
+                (self.see_tx0_tx1, True, -1),
                 #The timeout here is on waiting for confirmations, so very long
-                (self.see_tx0_tx1, True,
+                (self.wait_for_phase_2, False,
                  cs_single().one_confirm_timeout * cs_single().config.getint(
                      "TIMEOUT", "tx01_confirm_wait")),
                 #only updates after confirmation; the custom delay here is to
                 #account for network propagation delays for the TX0/TX1 conf.
-                (self.wait_for_phase_2, False, cs_single().config.getint(
+                (self.send_coinswap_secret, False, cs_single().config.getint(
                     "TIMEOUT", "propagation_buffer")),
-                (self.send_coinswap_secret, False, -1),
                 (self.receive_tx5_sig, False, -1),
                 #Give enough time for bitcoin network propagation here
                 (self.broadcast_tx5, True, cs_single().config.getint(
