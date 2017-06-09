@@ -898,12 +898,6 @@ class CoinSwapParticipant(object):
             loaded_state = json.loads(f.read(), object_hook=_byteify)
         self.coinswap_parameters = CoinSwapPublicParameters()
         self.coinswap_parameters.deserialize(loaded_state['public_parameters'])
-        #The sessionid must match that provided; sanity check
-        if sessionid and not sessionid == self.coinswap_parameters.session_id:
-            cslog.info(
-                "Error, session id in the file does not match, should be: " + \
-                sessionid + ", was: " + self.coinswap_parameters.session_id)
-            sys.exit(0)
         self.state_file = sf
         self.sm.state = loaded_state['current_state']
         self.keyset = loaded_state['keyset']
