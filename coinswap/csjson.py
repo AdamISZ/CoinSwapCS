@@ -103,6 +103,17 @@ class CoinSwapCarolJSONServer(jsonrpc.JSONRPC):
         self.update_status()
         jsonrpc.JSONRPC.__init__(self)
 
+    def refresh_carols(self):
+        """Remove CoinSwapCarol instances that are flagged complete from
+        the running dict."""
+        to_remove = []
+        for k, v in self.carols.iteritems():
+            if v.completed:
+                to_remove.append(k)
+        for x in to_remove:
+            self.carols.pop(x, None)
+            cslog.info("Removed session: " + str(x) + " from tracking (finished).")
+
     def update_status(self):
         #initialise status variables from config; some are updated dynamically
         c = cs_single().config
@@ -116,7 +127,7 @@ class CoinSwapCarolJSONServer(jsonrpc.JSONRPC):
         clientlockmin, clientlockmax = [int(x) for x in clientlockrange.split(",")]
         lock0 = c.getint("TIMEOUT", "lock_client")
         status = {}
-        #TODO requires keeping track of endpoints of swaps
+        self.refresh_carols()
         if len(self.carols.keys()) >= c.getint("SERVER",
                                                "maximum_concurrent_coinswaps"):
             status["busy"] = True
@@ -203,6 +214,10 @@ class CoinSwapCarolJSONServer(jsonrpc.JSONRPC):
         added here). It does not use the sig/nonce since the session key
         is not yet established.
         """
+        #Don't accept handshake if we are busy
+        status = self.update_status()
+        if status["busy"]:
+            return (False, "Server is busy, cannot complete handshake")
         #Prepare a new CoinSwapCarol instance for this session
         #start with a unique ID of 16 byte entropy:
         sessionid = binascii.hexlify(os.urandom(16))

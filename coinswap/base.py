@@ -851,6 +851,7 @@ class CoinSwapParticipant(object):
         self.tx4_confirmed = False
         self.successful_tx3_redeem = None
         self.consumed_nonces = []
+        self.completed = False
         #Carol must keep track of coins reserved for usage
         #so as to not select them to spend, twice, concurrently.
         #We only init with a fresh empty list if this is the first
@@ -1258,6 +1259,7 @@ class CoinSwapParticipant(object):
         from .blockchaininterface import sync_wallet
         from .alice import CoinSwapAlice
         from .carol import CoinSwapCarol
+        self.completed = True
         sync_wallet(self.wallet)
         self.bbma = self.wallet.get_balance_by_mixdepth(verbose=False)
         cslog.info("Wallet before: ")
