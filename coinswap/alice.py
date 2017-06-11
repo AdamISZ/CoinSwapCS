@@ -460,6 +460,22 @@ class CoinSwapAlice(CoinSwapParticipant):
         elif self.coinswap_parameters.base_amount > status["maximum_amount"]:
             cslog.info("Amount too large for server")
             reactor.stop()
+        elif cs_single().config.getint("TIMEOUT", "lock_client") > status[
+            "locktimes"]["lock_client"]["max"]:
+            cslog.info("Our client locktime (lock 0) is too high.")
+            reactor.stop()
+        elif cs_single().config.getint("TIMEOUT", "lock_client") < status[
+            "locktimes"]["lock_client"]["min"]:
+            cslog.info("Our client locktime (lock 0) is too small.")
+            reactor.stop()
+        elif cs_single().config.getint("TIMEOUT", "lock_server") > status[
+            "locktimes"]["lock_server"]["max"]:
+            cslog.info("Our server locktime (lock 1) is too high.")
+            reactor.stop()
+        elif cs_single().config.getint("TIMEOUT", "lock_server") < status[
+            "locktimes"]["lock_server"]["min"]:
+            cslog.info("Our server locktime (lock 1) is too small.")
+            reactor.stop()
         else:
             cslog.info("Server settings are compatible, continuing...")
             self.sm.tick()

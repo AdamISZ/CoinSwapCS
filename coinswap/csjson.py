@@ -110,6 +110,11 @@ class CoinSwapCarolJSONServer(jsonrpc.JSONRPC):
         destination_chain = c.get("SERVER", "destination_chain")
         minimum_amount = c.getint("SERVER", "minimum_amount")
         maximum_amount = c.getint("SERVER", "maximum_amount")
+        serverlockrange = c.get("SERVER", "server_locktime_range")
+        serverlockmin, serverlockmax = [int(x) for x in serverlockrange.split(",")]
+        clientlockrange = c.get("SERVER", "client_locktime_range")
+        clientlockmin, clientlockmax = [int(x) for x in clientlockrange.split(",")]
+        lock0 = c.getint("TIMEOUT", "lock_client")
         status = {}
         #TODO requires keeping track of endpoints of swaps
         if len(self.carols.keys()) >= c.getint("SERVER",
@@ -132,6 +137,10 @@ class CoinSwapCarolJSONServer(jsonrpc.JSONRPC):
         status["destination_chain"] = destination_chain
         status["cscs_version"] = cs_single().CSCS_VERSION
         status["fee_policy"] = self.fee_policy.get_policy()
+        status["locktimes"] = {"lock_server": {"min": serverlockmin,
+                                                         "max": serverlockmax},
+                                         "lock_client": {"min": clientlockmin,
+                                                         "max": clientlockmax}}
         return status
 
     def jsonrpc_status(self):

@@ -180,17 +180,24 @@ class CoinSwapCarol(CoinSwapParticipant):
             self.coinswap_parameters.set_pubkey("key_2_2_CB_1", params[1])
             self.coinswap_parameters.set_pubkey("key_TX2_lock", params[2])
             self.coinswap_parameters.set_pubkey("key_TX3_secret", params[3])
-            #Client's locktimes must be in an acceptable range.
-            #Note that the tolerances here are hardcoded, probably a TODO.
-            #(Although it'll be less complicated if everybody runs with one
-            #default for the locktimes).
+            #Client's locktimes must be in the acceptable range.
             cbh = get_current_blockheight()
-            my_lock0 = cs_single().config.getint("TIMEOUT", "lock_client")
-            my_lock1 = cs_single().config.getint("TIMEOUT", "lock_server")
-            if params[4] not in range(cbh + my_lock0 - 10, cbh + my_lock0 + 11):
+            serverlockrange = cs_single().config.get("SERVER",
+                                                     "server_locktime_range")
+            serverlockmin, serverlockmax = [
+                int(x) for x in serverlockrange.split(",")]
+            clientlockrange = cs_single().config.get("SERVER",
+                                                     "client_locktime_range")
+            clientlockmin, clientlockmax = [
+                int(x) for x in clientlockrange.split(",")]
+            if params[4] not in range(cbh + clientlockmin, cbh + clientlockmax+1):
                 return (False, "Counterparty LOCK0 out of range")
-            if params[5] not in range(cbh + my_lock1 - 10, cbh + my_lock1 + 11):
+            if params[5] not in range(cbh + serverlockmin, cbh + serverlockmax+1):
                 return (False, "Counterparty LOCK1 out of range")
+            #This is enforced in CoinSwapPublicParameters with assert, it must
+            #not trigger in the server from external input.
+            if params[4] <= params[5]:
+                return (False, "LOCK1 must be before LOCK0")
             self.coinswap_parameters.set_timeouts(params[4], params[5])
             self.coinswap_parameters.set_addr_data(addr5=params[6])
         except Exception as e:

@@ -59,6 +59,8 @@ MINIMUM_AMOUNT: Lowest amount in satoshis that the server currently
 supports; note this changes over time.
 MAXIMUM_AMOUNT: Largest amount in satoshis that the server currently
 supports; note this changes over time.
+LOCKTIMES: The offset in blocks from the current block height
+that the server requires; our values should be between 'max' and 'min' in each case.
 BUSY: If True, the server is currently not available (usually because
 is serving other requests, or has run out of coins).
 Default: False

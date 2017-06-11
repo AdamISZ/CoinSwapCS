@@ -125,6 +125,8 @@ tx01_confirm_wait = 2
 #
 #These are critical to CoinSwap's design; probably better not to change them,
 #but if you do, read the following notes and make sure you understand.
+#Also note these variables are ONLY for client, server uses the variable in the
+#SERVER section of the config (server/client_locktime_range).
 #Locktime for TX3 (server's timeout); the server can refund her pay-in transaction
 #after this number of blocks, from the starting time
 lock_server = 50
@@ -205,6 +207,10 @@ ssl_certificate_location = 0
 #to what's available in mixdepth 0 of the wallet.
 minimum_amount = 5000000
 maximum_amount = 500000000
+#minimum and maximum allowable server and client locktimes (relative to current
+#blockheight).
+server_locktime_range = 10,50
+client_locktime_range = 20,100
 #to reduce load/complexity, an upper limit on the number of concurrent coinswaps
 maximum_concurrent_coinswaps = 3
 #**FEES**
