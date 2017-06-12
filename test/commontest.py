@@ -34,8 +34,8 @@ def make_sign_and_push(ins_full,
     total = sum(x['value'] for x in ins_full.values())
     ins = ins_full.keys()
     #random output address and change addr
-    output_addr = wallet.get_new_addr(1, 1) if not output_addr else output_addr
-    change_addr = wallet.get_new_addr(1, 0) if not change_addr else change_addr
+    output_addr = wallet.get_new_addr(1, 1, True) if not output_addr else output_addr
+    change_addr = wallet.get_new_addr(1, 0, True) if not change_addr else change_addr
     fee_est = estimate_tx_fee(len(ins), 2) if estimate_fee else 10000
     outs = [{'value': amount,
              'address': output_addr}, {'value': total - amount - fee_est,

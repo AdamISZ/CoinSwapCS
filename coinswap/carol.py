@@ -474,7 +474,7 @@ class CoinSwapCarol(CoinSwapParticipant):
         in broadcasting a redemption (to tx5_address), False otherwise.
         """
         #**CONSTRUCT TX3-redeem-timeout; use a fresh address to redeem
-        dest_addr = self.wallet.get_new_addr(0, 1)
+        dest_addr = self.wallet.get_new_addr(0, 1, True)
         self.tx3redeem = CoinSwapRedeemTX23Timeout(
             self.coinswap_parameters.pubkeys["key_TX3_secret"],
             self.hashed_secret,
@@ -507,7 +507,7 @@ class CoinSwapCarol(CoinSwapParticipant):
             cslog.info(self.tx2.fully_signed_tx)
             return False
         #**CONSTRUCT TX2-redeem-secret; use a fresh address to redeem
-        dest_addr = self.wallet.get_new_addr(0, 1)
+        dest_addr = self.wallet.get_new_addr(0, 1, True)
         tx2redeem_secret = CoinSwapRedeemTX23Secret(self.secret,
                         self.coinswap_parameters.pubkeys["key_TX2_secret"],
                         self.coinswap_parameters.timeouts["LOCK0"],

@@ -408,7 +408,7 @@ class BitcoinCoreInterface(BlockchainInterface):
                     #rescans; perhaps user should set addr_req_count high
                     #(see above TODO)
                     req_count = addr_req_count
-                wallet_addr_list += [wallet.get_new_addr(mix_depth, forchange)
+                wallet_addr_list += [wallet.get_new_addr(mix_depth, forchange, True)
                                      for _ in range(req_count)]
                 #Indices are reset here so that the next algorithm step starts
                 #from the beginning of each branch
@@ -452,7 +452,7 @@ class BitcoinCoreInterface(BlockchainInterface):
                                                     forchange):
                         break
                     mix_change_addrs = [
-                        wallet.get_new_addr(mix_depth, forchange)
+                        wallet.get_new_addr(mix_depth, forchange, True)
                         for _ in range(addr_req_count)
                     ]
                     for mc_addr in mix_change_addrs:
@@ -495,7 +495,7 @@ class BitcoinCoreInterface(BlockchainInterface):
                       ' at ' + str(indices))
             for mix_depth, forchange in too_few_addr_mix_change:
                 wallet_addr_list += [
-                    wallet.get_new_addr(mix_depth, forchange)
+                    wallet.get_new_addr(mix_depth, forchange, True)
                     for _ in range(addr_req_count * 3)
                 ]
 

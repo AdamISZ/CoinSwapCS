@@ -226,10 +226,10 @@ class CoinSwapCarolJSONServer(jsonrpc.JSONRPC):
         #TX5 output address functions like change, goes back to original.
         #TX2/3 are unambiguous coinswap outs, since adversary can deduce
         #who they belong to, no point in isolating them (go back to start).
-        tx4address = self.wallet.get_new_addr(1, 1)
-        tx2_carol_address = self.wallet.get_new_addr(0, 1)
-        tx3_carol_address = self.wallet.get_new_addr(0, 1)
-        tx5_carol_address = self.wallet.get_new_addr(0, 1)
+        tx4address = self.wallet.get_new_addr(1, 1, True)
+        tx2_carol_address = self.wallet.get_new_addr(0, 1, True)
+        tx3_carol_address = self.wallet.get_new_addr(0, 1, True)
+        tx5_carol_address = self.wallet.get_new_addr(0, 1, True)
         cpp = CoinSwapPublicParameters()
         cpp.set_session_id(sessionid)
         cpp.set_fee_policy(self.fee_policy)

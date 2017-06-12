@@ -158,7 +158,8 @@ def main_cs(test_data=None):
     #for testing main script (not test framework), need funds.
     if not test_data and isinstance(
         cs_single().bc_interface, RegtestBitcoinCoreInterface):
-        cs_single().bc_interface.grab_coins(wallet.get_new_addr(0, 0), 2.0)
+        cs_single().bc_interface.grab_coins(wallet.get_new_addr(0, 0, True), 2.0)
+        wallet.index[0][0] -= 1
         time.sleep(3)
     sync_wallet(wallet, fast=options.fastsync)
     if test_data:
@@ -214,7 +215,7 @@ def main_cs(test_data=None):
             sys.exit(0)
     else:
         #Our destination address should be in a separate mixdepth
-        tx5address = wallet.get_new_addr(1, 1)
+        tx5address = wallet.get_new_addr(1, 1, True)
     #instantiate the parameters, but don't yet have the ephemeral pubkeys
     #or destination addresses.
     #TODO figure out best estimate incl. priority

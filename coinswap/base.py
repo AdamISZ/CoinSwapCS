@@ -1002,7 +1002,7 @@ class CoinSwapParticipant(object):
         if isinstance(self, CoinSwapAlice):
             #for redeeming, we get a new address on the fly (not pre-agreed)
             if not self.backout_redeem_addr:
-                self.backout_redeem_addr = self.wallet.get_new_addr(0, 1)
+                self.backout_redeem_addr = self.wallet.get_new_addr(0, 1, True)
             if self.sm.state in [7, 8, 9]:
                 #Alice has broadcast TX0 but has not released the secret;
                 #therefore it's entirely safe to just wait for L0 and then
@@ -1097,7 +1097,7 @@ class CoinSwapParticipant(object):
         elif isinstance(self, CoinSwapCarol):
             #for redeeming, we get a new address on the fly (not pre-agreed)
             if not self.backout_redeem_addr:
-                self.backout_redeem_addr = self.wallet.get_new_addr(0, 1)
+                self.backout_redeem_addr = self.wallet.get_new_addr(0, 1, True)
             if self.sm.state in [6, 7]:
                 #This is by far the trickiest case.
                 #
