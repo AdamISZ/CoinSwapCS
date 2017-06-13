@@ -7,7 +7,7 @@ from coinswap import (cs_single, CoinSwapPublicParameters, CoinSwapAlice,
                       CoinSwapCarol, CoinSwapJSONRPCClient, sync_wallet,
                       get_current_blockheight, RegtestBitcoinCoreInterface,
                       BitcoinCoreInterface, get_log, load_coinswap_config,
-                      get_coinswap_parser, CoinSwapCarolJSONServer)
+                      get_coinswap_parser, CoinSwapCarolJSONServer, start_tor)
 
 from twisted.internet import reactor
 try:
@@ -103,7 +103,15 @@ def main_server(options, wallet, test_data=None):
     carol_class = test_data['alt_c_class'] if test_data and \
         test_data['alt_c_class'] else CoinSwapCarol
     fcs = test_data["fail_carol_state"] if test_data else None
-    if cs_single().config.get("SERVER", "use_ssl") != "false":
+    #Hidden service has first priority
+    if cs_single().config.get("SERVER", "use_onion") != "false":
+        s = server.Site(CoinSwapCarolJSONServer(wallet,
+                                                    testing_mode=testing_mode,
+                                                    carol_class=carol_class,
+                                                    fail_carol_state=fcs))
+        d = start_tor(s, cs_single().config.getint("SERVER", "onion_port"), 9876)
+        #Any callbacks after Tor is inited can be added here with d.addCallback
+    elif cs_single().config.get("SERVER", "use_ssl") != "false":
         reactor.listenSSL(int(port), server.Site(CoinSwapCarolJSONServer(wallet,
                 testing_mode=testing_mode, carol_class=carol_class,
                 fail_carol_state=fcs)), contextFactory = get_ssl_context())

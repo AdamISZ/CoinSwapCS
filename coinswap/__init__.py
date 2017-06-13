@@ -14,5 +14,6 @@ from .blockchaininterface import (sync_wallet, RegtestBitcoinCoreInterface,
 from .alice import CoinSwapAlice
 from .carol import CoinSwapCarol
 from .csjson import CoinSwapCarolJSONServer, CoinSwapJSONRPCClient
+from .tor import start_tor
 
 

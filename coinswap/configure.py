@@ -186,12 +186,18 @@ backout_fee_multiplier = 1.0
 
 
 [SERVER]
-#These settings can be safely ignored if you are running as client ('Alice')
+#These settings can be safely ignored if you are running as client ('Alice').
+#***
 #source and destination chain is reserved for possible future implementations
 #cross-chain.
 source_chain = BTC
 destination_chain = BTC
-#port on which to serve
+#Hidden service is the preferred way of serving; if use_onion is set to anything
+#except 'false', clearnet modes will be ignored.
+#(Tor will be started within the application)
+use_onion = true
+onion_port = 1234
+#port on which to serve clearnet
 port = 7080
 #whether to use SSL; non-SSL is *strongly* disrecommended, mainly because
 #you lose confidentiality, it also allows MITM which is not a loss of funds risk,
