@@ -9,6 +9,6 @@ setup(name='CoinSwapCS',
       author_email='ekaggata@gmail.com',
       license='GPL',
       packages=['coinswap'],
-      install_requires=['twisted==16.6.0', 'joinmarketclient>=0.2.0',
+      install_requires=['twisted==16.6.0', 'joinmarketclient>=0.2.0', 'txtorcon',
                         'joinmarketbitcoin>=0.2.0', 'pyopenssl', 'txJSON-RPC'],
       zip_safe=False)

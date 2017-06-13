@@ -134,8 +134,11 @@ Then you need this repo
     git clone https://github.com/AdamISZ/CoinSwapCS; cd CoinSwapCS
     python setup.py install
 
-To connect to a server you'll then need its hostname and port, then start with
-`python coinswap_run.py --help` (the config file in `~/.CoinSwapCS/coinswapcs.cfg` will need edits).
+To connect to a server you'll then need its hostname and port, then do a status check with
+`python coinswap_run.py -s https://url:port -C` (the config file in `~/.CoinSwapCS/coinswapcs.cfg` will need edits after the first run).
+
+If using a hidden service, install tor and instead use:
+`torsocks python coinswap_run.py -s http://onionurl:port -C`
 
 ### Risk factors
 
