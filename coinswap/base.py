@@ -127,7 +127,7 @@ def get_secret_from_vin(vins, hashed_secret):
             continue
         candidate_secret = get_coinswap_secret(raw_secret=ss_deserialized[1])
         if candidate_secret[1] == hashed_secret:
-            cslog.info("Found secret on blockchain: " + candidate_secret[0])
+            cslog.info("Found secret in counterparty tx: " + candidate_secret[0])
             return candidate_secret[0]
         else:
             cslog.info("Candidate vin had entry of right length, but wrong secret.")
@@ -455,6 +455,8 @@ class CoinSwapTX(object):
             if not txid == self.txid:
                 cslog.info("WARNING: malleation detected.")
         self.is_confirmed = True
+        #Confirmed implies broadcast (this is used in backout logic)
+        self.is_broadcast = True
 
     def signature_form(self, index):
         assert len(self.signing_redeem_scripts) >= index + 1
@@ -875,12 +877,16 @@ class CoinSwapParticipant(object):
         """Use the blockchain interface to update
         state when a transaction is broadcast and confirmed
         """
+        #TODO here assuming that we want to monitor spends from the payout index
+        #only, and also that confirm_update should be triggered only by the 1st
+        #confirm
         cs_single().bc_interface.add_tx_notify(
         btc.deserialize(tx.fully_signed_tx),
         tx.unconfirm_update,
         tx.confirm_update,
         tx.spent_update,
-        tx.output_address)
+        tx.output_address,
+        tx.pay_out_index)
 
     def generate_privkey(self):
         #always hex, with compressed flag
@@ -1260,7 +1266,7 @@ class CoinSwapParticipant(object):
         from .alice import CoinSwapAlice
         from .carol import CoinSwapCarol
         self.completed = True
-        sync_wallet(self.wallet)
+        sync_wallet(self.wallet, fast=True)
         self.bbma = self.wallet.get_balance_by_mixdepth(verbose=False)
         cslog.info("Wallet before: ")
         cslog.info(pformat(self.bbmb))
