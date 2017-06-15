@@ -19,9 +19,10 @@ def setup_failed(arg):
     print("SETUP FAILED", arg)
     reactor.stop()
 
-def start_tor(site, hs_public_port):
+def start_tor(site, hs_public_port, hsdir):
     # set up HS server
-    hs_endpoint = endpoints.serverFromString(reactor, "onion:"+str(hs_public_port))
+    hs_endpoint = endpoints.serverFromString(reactor,
+        "onion:"+str(hs_public_port)+":hiddenServiceDir="+hsdir)
     d = hs_endpoint.listen(site)
     #add chain of callbacks for actions after Tor is set up correctly.
     d.addCallback(listening)

@@ -109,7 +109,13 @@ def main_server(options, wallet, test_data=None):
                                                     testing_mode=testing_mode,
                                                     carol_class=carol_class,
                                                     fail_carol_state=fcs))
-        d = start_tor(s, cs_single().config.getint("SERVER", "onion_port"))
+        hiddenservice_dir = os.path.join(cs_single().homedir, "hiddenservice")
+        if not os.path.exists(hiddenservice_dir):
+            os.makedirs(hiddenservice_dir)
+        if 'hs_dir' in cs_single().config.options('SERVER'):
+            hiddenservice_dir = cs_single().config.get("SERVER", "hs_dir")
+        d = start_tor(s, cs_single().config.getint("SERVER", "onion_port"),
+                      hiddenservice_dir)
         #Any callbacks after Tor is inited can be added here with d.addCallback
     elif cs_single().config.get("SERVER", "use_ssl") != "false":
         reactor.listenSSL(int(port), server.Site(CoinSwapCarolJSONServer(wallet,

@@ -197,6 +197,9 @@ destination_chain = BTC
 #(Tor will be started within the application)
 use_onion = true
 onion_port = 1234
+#Location of hostname and private key for hidden service - Note:
+#if not set, default is APPDIR/hiddenservice (~/.CoinSwapCS/hiddenservice)
+#hs_dir = /chosen/directory
 #port on which to serve clearnet
 port = 7080
 #whether to use SSL; non-SSL is *strongly* disrecommended, mainly because
