@@ -335,9 +335,13 @@ class CoinSwapAlice(CoinSwapParticipant):
         """Proceeds to next state when Carol confirms
         that TX0 and TX1 are confirmed.
         """
+        if not self.phase2_loop.running:
+            #can occur if response from other end is slow
+            return
         if not result:
             return
-        self.phase2_loop.stop()
+        if self.phase2_loop.running:
+            self.phase2_loop.stop()
         self.sm.tick()
         
     def send_coinswap_secret(self):

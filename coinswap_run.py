@@ -109,7 +109,7 @@ def main_server(options, wallet, test_data=None):
                                                     testing_mode=testing_mode,
                                                     carol_class=carol_class,
                                                     fail_carol_state=fcs))
-        d = start_tor(s, cs_single().config.getint("SERVER", "onion_port"), 9876)
+        d = start_tor(s, cs_single().config.getint("SERVER", "onion_port"))
         #Any callbacks after Tor is inited can be added here with d.addCallback
     elif cs_single().config.get("SERVER", "use_ssl") != "false":
         reactor.listenSSL(int(port), server.Site(CoinSwapCarolJSONServer(wallet,
