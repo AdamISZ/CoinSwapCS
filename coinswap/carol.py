@@ -328,7 +328,6 @@ class CoinSwapCarol(CoinSwapParticipant):
                 refund_pubkey=self.coinswap_parameters.pubkeys["key_TX3_lock"],
         carol_only_address=self.coinswap_parameters.output_addresses["tx3_carol_address"],
         carol_only_amount=self.coinswap_parameters.tx3_amounts["carol"])
-        self.import_address(self.tx3.output_address)
         #create our signature on TX3
         self.tx3.sign_at_index(self.keyset["key_2_2_CB_0"][0], 0)
         our_tx3_sig = self.tx3.signatures[0][0]
@@ -460,6 +459,7 @@ class CoinSwapCarol(CoinSwapParticipant):
         """
         assert self.tx3.spending_tx
         deser_spending_tx = btc.deserialize(self.tx3.spending_tx)
+        cslog.info("Here is the spending transaction: " + str(deser_spending_tx))
         vins = deser_spending_tx['ins']
         self.secret = get_secret_from_vin(vins, self.hashed_secret)
         if not self.secret:
@@ -485,7 +485,6 @@ class CoinSwapCarol(CoinSwapParticipant):
             dest_addr)
         self.tx3redeem.sign_at_index(self.keyset["key_TX3_lock"][0], 0)
         wallet_name = cs_single().bc_interface.get_wallet_name(self.wallet)
-        self.import_address(self.tx3redeem.output_address)
         msg, success = self.tx3redeem.push()
         cslog.info("Redeem tx: ")
         cslog.info(self.tx3redeem)
@@ -517,7 +516,6 @@ class CoinSwapCarol(CoinSwapParticipant):
                         dest_addr)
         tx2redeem_secret.sign_at_index(self.keyset["key_TX2_secret"][0], 0)
         wallet_name = cs_single().bc_interface.get_wallet_name(self.wallet)
-        self.import_address(tx2redeem_secret.output_address)
         msg, success = tx2redeem_secret.push()
         cslog.info("Redeem tx: ")
         cslog.info(tx2redeem_secret)
@@ -529,7 +527,7 @@ class CoinSwapCarol(CoinSwapParticipant):
             return False
         else:
             cslog.info("Successfully redeemed funds via TX2, to address: "+\
-                      self.coinswap_parameters.output_addresses["tx4_address"] + ", in txid: " +\
+                      dest_addr + ", in txid: " +\
                       tx2redeem_secret.txid)
             return True
 
