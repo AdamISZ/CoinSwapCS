@@ -24,18 +24,6 @@ import json
 
 cslog = get_log()
 
-def cli_fee_checker(self, fee):
-        print("The server proposes the following coinswap fee: " + str(fee) + ""
-              ", which is: " + str(float(
-                  fee)*100/self.coinswap_parameters.tx5_amount) + "% of your "
-              "transaction size " + str(self.coinswap_parameters.tx5_amount))
-        if not raw_input("Do you accept (y/n)?") == "y":
-            print("You rejected the fees, quitting.")
-            return False
-        else:
-            print("You accepted the fee, continuing ...")
-            return True
-
 def parse_server_string(server_string):
     scheme, server, port = server_string.split(":")
     print("got this scheme, server, port: ", scheme, server, port)
