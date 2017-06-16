@@ -103,6 +103,20 @@ class CoinSwapCarolJSONServer(jsonrpc.JSONRPC):
         self.update_status()
         jsonrpc.JSONRPC.__init__(self)
 
+    def render(self, request):
+        """In order to respond appropriately to ill formed requests (no content,
+        or ill-formed content), we return a null response early in this class,
+        overriding render() from the base class, which unfortunately does not
+        correctly handle e.g. browser GET requests.
+        """
+        request.content.seek(0, 0)
+        content = request.content.read()
+        try:
+            json.loads(content)
+        except:
+            return "Nothing here."
+        return jsonrpc.JSONRPC.render(self, request)
+
     def refresh_carols(self):
         """Remove CoinSwapCarol instances that are flagged complete from
         the running dict."""
