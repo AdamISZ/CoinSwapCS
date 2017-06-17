@@ -57,10 +57,9 @@ point. The intention is not of course to have a "single server" that everyone
 uses; this loses a lot of the value, and is dangerous. Rather, the intention is
 to have long-lived participants serving clients, to make it easier to use. There
 is no restriction on who can be such a server, other than having to stand it up
-on a machine with a hot wallet. The exact way this is done is left open; it could
-be on a hidden service over Tor for example, or communication could happen over IRC
-etc. For now there is a simple HTTP server provided serving JSON-RPC requests, and
-TLS will be added shortly.
+on a machine with a hot wallet. The exact way this is done is left open; a hidden
+service over Tor is implemented as the default, while HTTP and TLS clearnet exist as
+options, but other possibilities should be easy to add.
 
 ##### Who are Alice and Carol?
 
@@ -101,44 +100,19 @@ coins.
 
 Is this ready to use? **NO**.
 
-The status of this section will change. For now, there are still quite a bunch of
-things not really quite complete; it isn't quite ready for testnet testing, even.
+There is a testnet coins server running at fwjpp2ae5zcrccv7.onion:1234.
+
+The code is sort-of ready for testnet testing (done a few runs), you're welcome
+to follow the installation guide below, try coinswaps (with the above server ideally)
+and report issues.
+A 0.0.1 release will be made shortly, which will mean the code is 'officially' ready for
+testnet testing.
+Releasing for mainnet is still a way off (see Milestone 0.1).
 The open issues are listed in [What needs doing](#todo-list).
 
 ### Installation
 
-This code uses Python 2.7. (Yes, I know!)
-
-(TODO: not sure the exact apt-get dependencies for this).
-
-Start by making and activating a virtualenv:
-
-    sudo pip install virtualenv
-    mkdir coinswapenv
-    cd coinswapenv; virtualenv .; source bin/activate; cd ..
-  
-Follow the instructions to install Joinmarket client/bitcoin code from
-[this](https://github.com/AdamISZ/joinmarket-clientserver) repo. The reason for
-doing this is to pick up the bitcoin and wallet code from Joinmarket (this project
-reuses that code, and so the wallets are compatible with Joinmarket).
-
-The instructions are:
-
-    git clone https://github.com/AdamISZ/joinmarket-clientserver
-    cd joinmarket-clientserver
-    python setupall.py --client-bitcoin
-    cd ..
-
-Then you need this repo
-
-    git clone https://github.com/AdamISZ/CoinSwapCS; cd CoinSwapCS
-    python setup.py install
-
-To connect to a server you'll then need its hostname and port, then do a status check with
-`python coinswap_run.py -s https://url:port -C` (the config file in `~/.CoinSwapCS/coinswapcs.cfg` will need edits after the first run).
-
-If using a hidden service, install tor and instead use:
-`torsocks python coinswap_run.py -s http://onionurl:port -C`
+Moved to a separate [document](docs/INSTALL.md).
 
 ### Risk factors
 
