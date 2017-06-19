@@ -32,8 +32,13 @@ clean_datadir()
 
 run_test()
 {
+    local test_result;
     py.test --btcroot="${bitcoind_dir}" --btcpwd=123456abcdef --btcconf="$1" --runtype="$2" -s | tee ${curtest}/pytest.log
-    echo "$?"
+    test_result="${PIPESTATUS[0]}"
+    echo "${test_result}"
+    if (( ${test_result} != 0 )) && [[ ${run_no_args} == true ]]; then
+        exit 1
+    fi
 }
 
 test_case()
@@ -80,7 +85,7 @@ main()
         "cnobroadcasttx1" "cbadreceivesecret" "cbadsendtx5sig" "cbadreceivetx4sig")
     local recovery_tests=( rc{3..9} ra{3..11} )
 
-    local bitcoind_="${1:-$(which bitcoind)}"
+    local bitcoind_="${1:-$(which bitcoind)}" run_no_args="${1:-true}"
     echo "using bitcoind : ${bitcoind_}" 2>&1
     if [[ ! -x ${bitcoind_} ]]; then
         echo "bitcoind not found or not executable : ${bitcoind_}" 1>&2
