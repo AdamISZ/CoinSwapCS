@@ -156,7 +156,7 @@ def generate_escrow_redeem_script(hashed_secret, recipient_pubkey, locktime,
     hashed_secret, recipient_pubkey, refund_pubkey = [binascii.unhexlify(
         x) for x in hashed_secret, recipient_pubkey, refund_pubkey]
     script = create_hash_script(recipient_pubkey, [hashed_secret])
-    redeem_script = [OP_IF] + script + [OP_ELSE,
+    redeem_script = [OP_DEPTH, OP_2, OP_EQUAL, OP_IF] + script + [OP_ELSE,
                                         int_to_tx_ser(locktime),
                                         OP_CHECKLOCKTIMEVERIFY, OP_DROP,
                                         refund_pubkey, OP_CHECKSIG,
@@ -609,7 +609,7 @@ class CoinSwapRedeemTX23Secret(CoinSwapTX):
         assert self.fully_signed()
         script_to_serialize = [binascii.unhexlify(self.signatures[0][0])]
         script_to_serialize += [binascii.unhexlify(self.secret)]
-        script_to_serialize += [OP_TRUE,
+        script_to_serialize += [
                                 binascii.unhexlify(self.signing_redeem_scripts[0])]
         rfs = btc.serialize_script(script_to_serialize)
         #Manually insert the customized refunding script
@@ -652,7 +652,7 @@ class CoinSwapRedeemTX23Timeout(CoinSwapTX):
         """
         assert self.fully_signed()
         script_to_serialize = [binascii.unhexlify(self.signatures[0][0])]
-        script_to_serialize += [None,
+        script_to_serialize += [
                                 binascii.unhexlify(self.signing_redeem_scripts[0])]
         rfs = btc.serialize_script(script_to_serialize)
         #Manually insert the customized refunding script

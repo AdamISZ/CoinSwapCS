@@ -54,7 +54,6 @@ class StateMachine(object):
         Calls backout_callback on failure, to allow
         the caller to execute backout conditional on state.
         """
-        print('starting tick with args: ' + str(args))
         if self.state_in_process:
             cslog.info("Attempted to tick forward state but still in process, ignoring.")
             return (False, "Attempted to tick forward state but still in process, ignoring.")
