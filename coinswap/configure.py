@@ -155,10 +155,11 @@ minimum_blinding_amount = 1000000
 merge_algorithm = default
 # the fee estimate is based on a projection of how many satoshis
 # per kB are needed to get in one of the next N blocks, N set here
-# as the value of 'tx_fees'. This estimate can be extremely high
-# if you set N=1, so we choose N=3 for a more reasonable figure,
-# as our default.
-tx_fees = 3
+# as the value of 'tx_fees'. For CoinSwap, this is set to default
+# 1 for highest priority processing; you can reduce it, but if it's
+# a lot lower than the server's estimate, the server may refuse to
+# transact.
+tx_fees = 1
 #A value, in satoshis/kB, above which the fee is not allowed to be.
 #keep this fairly high, as exceeding it causes the program to 'panic'
 #and shut down.

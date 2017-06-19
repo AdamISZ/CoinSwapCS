@@ -1,4 +1,5 @@
 from .btscript import *
+from .state_machine import StateMachine
 from .base import (CoinSwapException, CoinSwapPublicParameters,
                       CoinSwapParticipant, CoinSwapTX, CoinSwapTX01,
                       CoinSwapTX23, CoinSwapTX45, CoinSwapRedeemTX23Secret,
@@ -6,7 +7,7 @@ from .base import (CoinSwapException, CoinSwapPublicParameters,
                       get_coinswap_secret, get_current_blockheight,
                       create_hash_script, get_secret_from_vin,
                       generate_escrow_redeem_script, get_transactions_from_block,
-                      StateMachine, prepare_ecdsa_msg, FeePolicy)
+                      prepare_ecdsa_msg, FeePolicy)
 from .configure import (cs_single, get_log, load_coinswap_config)
 from .cli_options import get_coinswap_parser
 from .blockchaininterface import (sync_wallet, RegtestBitcoinCoreInterface,

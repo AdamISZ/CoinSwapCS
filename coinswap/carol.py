@@ -74,23 +74,22 @@ class CoinSwapCarol(CoinSwapParticipant):
         """Receive Alice's half of the public parameters,
         and return our half if acceptable.
         """
-        return self.sm.tick_return("negotiate_coinswap_parameters",
-                                   alice_parameter_list)
+        return self.sm.tick(alice_parameter_list)
 
     def jsonrpc_tx0id_hx_tx2sig(self, *params):
-        return self.sm.tick_return("receive_tx0_hash_tx2sig", *params)
+        return self.sm.tick(*params)
 
     def jsonrpc_sigtx3(self, sig):
-        return self.sm.tick_return("receive_tx3_sig", sig)
+        return self.sm.tick(sig)
 
     def jsonrpc_phase2_ready(self):
         return self.is_phase2_ready()
 
     def jsonrpc_secret(self, secret):
-        return self.sm.tick_return("receive_secret", secret)
+        return self.sm.tick(secret)
 
     def jsonrpc_sigtx4(self, sig, txid5):
-        return self.sm.tick_return("receive_tx4_sig", sig, txid5)
+        return self.sm.tick(sig, txid5)
 
     def jsonrpc_confirm_tx4(self):
         return self.is_tx4_confirmed()

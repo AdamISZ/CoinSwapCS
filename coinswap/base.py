@@ -7,6 +7,7 @@ from txjsonrpc.web import jsonrpc
 from twisted.web import server
 from .btscript import *
 from .configure import get_log, cs_single
+from .state_machine import StateMachine
 from decimal import Decimal
 import binascii
 import time
@@ -190,155 +191,6 @@ class FeePolicy(object):
             return self.minimum_fee
         #Don't care about rounding errors here
         return int(proposed_fee)
-
-class StateMachine(object):
-    """A simple state machine that has integer states,
-    incremented on successful execution of corresponding callbacks.
-    """
-    def __init__(self, init_state, backout, callbackdata):
-        self.num_states = len(callbackdata)
-        self.init_state = init_state
-        self.state = init_state
-        #this is set to True to indicate that further processing
-        #is not allowed (when backing out)
-        self.freeze = False
-        self.default_timeout = float(cs_single().config.get("TIMEOUT",
-                                                    "default_network_timeout"))
-        #by default no pre- or post- processing
-        self.setup = None
-        self.finalize = None
-        self.backout_callback = backout
-        self.callbacks = []
-        self.auto_continue = []
-        self.timeouts = []
-        for i,cbd in enumerate(callbackdata):
-            self.callbacks.append(cbd[0])
-            if cbd[1]:
-                self.auto_continue.append(i)
-            if cbd[2] > 0:
-                self.timeouts.append(cbd[2])
-            else:
-                self.timeouts.append(self.default_timeout)
-
-    def stallMonitor(self, state):
-        """Wakes up a set timeout after state transition callback
-        was called; if state has not been incremented, we backout.
-        """
-        if state < self.state or self.state == len(self.callbacks):
-            return
-        if not self.freeze:
-            self.backout_callback('state transition timed out; backing out')
-        self.freeze = True
-
-    def tick_return(self, *args):
-        """Must pass the callback name as the first argument;
-        returns the return value from the first non-auto-continue
-        callback.
-        """
-        if self.freeze:
-            cslog.info("State machine is shut down, no longer receiving updates")
-            return True
-        cslog.info("starting server tick function, state is: " + str(self.state))
-        if self.state == len(self.callbacks):
-            cslog.info("State machine has completed.")
-            return True
-        requested_callback = args[0]
-        args = args[1:]
-        if requested_callback != self.callbacks[self.state].__name__:
-            cslog.info('invalid callback name: ' + str(requested_callback))
-            return False
-        if self.setup:
-            self.setup()
-        if not args:
-            retval, msg = self.execute_callback()
-        else:
-            retval, msg = self.execute_callback(*args)
-        if not retval:
-            cslog.info("Execution failed at step after: " + str(self.state) + \
-                  ", backing out.")
-            #state machine must lock and prevent update from counterparty
-            #at point of backout.
-            self.freeze = True
-            reactor.callLater(0, self.backout_callback, msg)
-            return (False, msg)
-        if self.finalize:
-            if self.state > 2:
-                self.finalize()
-        cslog.info("State: " + str(self.state -1) + " finished OK.")
-        #create a monitor call that's woken up after timeout; if we didn't
-        #update, something is wrong, so backout
-        if self.state < len(self.callbacks):
-            reactor.callLater(self.timeouts[self.state],
-                              self.stallMonitor, self.state)
-        if self.state in self.auto_continue:
-            return self.tick_return(self.callbacks[self.state].__name__)
-
-        return (retval, msg)
-
-    def tick(self, *args):
-        """Executes processing for each state with order enforced.
-        Runs pre- and post-processing step if provided.
-        Optionally provide arguments - for callbacks receiving data from
-        counterparty, these are provided, otherwise not.
-        Calls backout_callback on failure, to allow
-        the caller to execute backout conditional on state.
-        """
-        if self.freeze:
-            cslog.info("State machine is shut down, no longer receiving updates")
-            return
-        if self.state == len(self.callbacks):
-            cslog.info("State machine has completed.")
-            return
-        cslog.info("starting client tick function, state is: " + str(self.state))
-        if self.setup:
-            self.setup()
-        if not args:
-            retval, msg = self.execute_callback()
-        else:
-            retval, msg = self.execute_callback(*args)
-        if not retval:
-            cslog.info("Execution failed at step after: " + str(self.state) + \
-                  ", backing out.")
-            cslog.info("Error message: " + msg)
-            #state machine must lock and prevent update from counterparty
-            #at point of backout.
-            self.freeze = True
-            reactor.callLater(0, self.backout_callback, msg)
-            return False
-        if self.finalize:
-            if self.state > 2:
-                self.finalize()
-        cslog.info("State: " + str(self.state -1) + " finished OK.")
-        #create a monitor call that's woken up after timeout; if we didn't
-        #update, something is wrong, so backout
-        if self.state < len(self.callbacks):
-            reactor.callLater(self.timeouts[self.state],
-                              self.stallMonitor, self.state)
-        if self.state in self.auto_continue:
-            self.tick()
-
-    def execute_callback(self, *args):
-        try:
-            if args:
-                retval, msg = self.callbacks[self.state](*args)
-            else:
-                retval, msg = self.callbacks[self.state]()
-        except Exception as e:
-            errormsg = "Failure to execute step after: " + str(self.state)
-            errormsg += ", Exception: " + repr(e)
-            cslog.info(errormsg)
-            return (False, errormsg)
-        if not retval:
-            return (False, msg)
-        #update to next state *only* on success.
-        self.state += 1
-        return (retval, "OK")
-
-    def set_finalize(self, callback):
-        self.finalize = callback
-
-    def set_setup(self, callback):
-        self.setup = callback
         
 class CoinSwapTX(object):
     """A generic bitcoin transaction construct,
@@ -862,7 +714,9 @@ class CoinSwapParticipant(object):
         if self.wallet.used_coins is None:
             self.wallet.used_coins = []
         self.sm = StateMachine(self.state, self.backout,
-                               self.get_state_machine_callbacks())
+                               self.get_state_machine_callbacks(),
+                               float(cs_single().config.get("TIMEOUT",
+                                                      "default_network_timeout")))
         self.sm.set_finalize(self.finalize)
 
     def import_address(self, address):

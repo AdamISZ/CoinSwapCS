@@ -265,5 +265,4 @@ class CoinSwapCarolJSONServer(jsonrpc.JSONRPC):
             return (False, "Error in setting up handshake: " + repr(e))
         if not self.consume_nonce(alice_handshake[1]["nonce"], sessionid):
             return (False, "Invalid nonce in handshake.")
-        return self.carols[sessionid].sm.tick_return(
-            "handshake", alice_handshake)
+        return self.carols[sessionid].sm.tick(alice_handshake)
