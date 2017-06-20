@@ -36,7 +36,7 @@ run_test()
     py.test --btcroot="${bitcoind_dir}" --btcpwd=123456abcdef --btcconf="$1" --runtype="$2" -s | tee ${curtest}/pytest.log
     test_result="${PIPESTATUS[0]}"
     echo "${test_result}"
-    if (( ${test_result} != 0 )) && [[ ${run_no_args} == true ]]; then
+    if (( ${test_result} != 0 )) && (( ${exit_on_fail} == 1 )); then
         exit 1
     fi
 }
@@ -49,11 +49,12 @@ test_case()
             ;;
         recovery)
             echo "${recovery_tests[@]}"
-           ;;
+            ;;
         *)
             echo "$@"
             ;;
     esac
+    return 0
 }
 
 get_session_id()
@@ -85,7 +86,7 @@ main()
         "cnobroadcasttx1" "cbadreceivesecret" "cbadsendtx5sig" "cbadreceivetx4sig")
     local recovery_tests=( rc{3..9} ra{3..11} )
 
-    local bitcoind_="${1:-$(which bitcoind)}" run_no_args="${1:-true}"
+    local bitcoind_="${1:-$(which bitcoind)}" exit_on_fail="0"
     echo "using bitcoind : ${bitcoind_}" 2>&1
     if [[ ! -x ${bitcoind_} ]]; then
         echo "bitcoind not found or not executable : ${bitcoind_}" 1>&2
@@ -110,6 +111,9 @@ main()
 
     mk_bitcoinconf "${tmpdir}"
     mk_coinswapconf "${tmpdir}"
+    if [[ -z "$@" ]]; then
+        exit_on_fail="1"
+    fi
     local test_queue=( $( test_case "$@") )
     for test_case in ${test_queue[@]}; do
         curtest="${tmpdir}/${test_case}_${RANDOM}"
