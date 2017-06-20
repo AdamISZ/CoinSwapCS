@@ -44,12 +44,16 @@ run_test()
 test_case()
 {
     case "$@" in
-        ""|all)
+        "")
+            exit_on_fail="true"
+            echo "${tests[@]} ${recovery_tests[@]}"
+            ;;
+        all)
             echo "${tests[@]} ${recovery_tests[@]}"
             ;;
         recovery)
             echo "${recovery_tests[@]}"
-           ;;
+            ;;
         *)
             echo "$@"
             ;;
@@ -85,7 +89,7 @@ main()
         "cnobroadcasttx1" "cbadreceivesecret" "cbadsendtx5sig" "cbadreceivetx4sig")
     local recovery_tests=( rc{3..9} ra{3..11} )
 
-    local bitcoind_="${1:-$(which bitcoind)}" run_no_args="${1:-true}"
+    local bitcoind_="${1:-$(which bitcoind)}" exit_on_fail="false"
     echo "using bitcoind : ${bitcoind_}" 2>&1
     if [[ ! -x ${bitcoind_} ]]; then
         echo "bitcoind not found or not executable : ${bitcoind_}" 1>&2
