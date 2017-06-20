@@ -59,6 +59,10 @@ MINIMUM_AMOUNT: Lowest amount in satoshis that the server currently
 supports; note this changes over time.
 MAXIMUM_AMOUNT: Largest amount in satoshis that the server currently
 supports; note this changes over time.
+TESTNET: True or False
+FEE_POLICY: Fees as a percentage of tx amount, or a minimum.
+TX01_CONFIRM_WAIT: Range of acceptable number of blocks to wait for
+confirms of the funding transactions.
 LOCKTIMES: The offset in blocks from the current block height
 that the server requires; our values should be between 'max' and 'min' in each case.
 BUSY: If True, the server is currently not available (usually because
@@ -70,5 +74,12 @@ Default: False
                       dest="fastsync",
                       default=False,
                       help=("choose to do fast wallet sync, only for Core and "
-                      "only for previously synced wallet"))
+                      "only for previously synced wallet. Default false."))
+    parser.add_option("-x",
+                      "--nocheckfee",
+                      action="store_true",
+                      dest="checkfee",
+                      default=False,
+                      help=("don't wait for user prompt to decide whether to "
+                            "accept server's fee. Default is false."))
     return parser

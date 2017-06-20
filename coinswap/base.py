@@ -699,7 +699,14 @@ class CoinSwapParticipant(object):
         #Created on the fly for redeeming a backout (same mixdepth as origin)
         self.backout_redeem_addr = None
         #Only used by Alice; fee check callback
-        self.fee_checker = fee_checker
+        if fee_checker == "cli":
+            #default, command line
+            self.fee_checker = self.cli_fee_checker
+        elif fee_checker:
+            #non-default; callback
+            self.fee_checker = fee_checker
+        else:
+            self.fee_checker = None
         #currently only used by Carol; TODO
         self.phase2_ready = False
         self.tx4_confirmed = False
@@ -1156,7 +1163,7 @@ class CoinSwapParticipant(object):
             for t in [self.tx0, self.tx1, self.tx2, self.tx3, self.tx4, self.tx5]:
                 #This does not give all relevant information (in particular, the
                 #redeem transactions), TODO
-                if t and t.txid:
+                if t and t.txid and t.is_broadcast:
                     report_msg += ["We pushed transaction: " + t.txid]
                     report_msg += ["Amount: " + str(t.output_amount)]
                     report_msg += ["To address: " + t.output_address]

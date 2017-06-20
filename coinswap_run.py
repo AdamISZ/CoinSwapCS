@@ -230,7 +230,11 @@ def main_cs(test_data=None):
         alice = aliceclass(wallet, 'alicestate', cpp, testing_mode=testing_mode,
                            fail_state=fail_alice_state)
     else:
-        alice = aliceclass(wallet, 'alicestate', cpp, testing_mode=testing_mode)
+        if testing_mode or options.checkfee:
+            alice = aliceclass(wallet, 'alicestate', cpp, testing_mode=testing_mode)
+        else:
+            alice = aliceclass(wallet, 'alicestate', cpp, testing_mode=testing_mode,
+                           fee_checker="cli")
 
     alice_client = CoinSwapJSONRPCClient(server[2:], port,
                                          alice.sm.tick, alice.backout, usessl)

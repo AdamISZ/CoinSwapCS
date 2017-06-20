@@ -498,3 +498,16 @@ class CoinSwapAlice(CoinSwapParticipant):
         else:
             cslog.info("Server settings are compatible, continuing...")
             self.sm.tick()
+
+    def cli_fee_checker(self, fee):
+        print("The server proposes the following coinswap fee: " + str(fee) + ""
+              ", which is: " + "{0:.2f}".format(float(
+              fee)*100/self.coinswap_parameters.base_amount) + "% of your "
+              "transaction size " + str(
+              self.coinswap_parameters.base_amount) + ", do you accept? (y/n)")
+        if not raw_input() == "y":
+            print("You rejected the fees, quitting.")
+            return False
+        else:
+            print("You accepted the fee, continuing ...")
+            return True
