@@ -1090,8 +1090,7 @@ class CoinSwapParticipant(object):
         if None in result:
             return
         for u in result:
-            if u['confirms'] < cs_single().config.getint(
-                "TIMEOUT", "tx01_confirm_wait"):
+            if u['confirms'] < self.coinswap_parameters.tx01_confirm_wait:
                 return
         self.loop.stop()
         if cb:
@@ -1204,7 +1203,8 @@ class CoinSwapPublicParameters(object):
     attr_list = ['tx0_amount', 'tx1_amount', 'tx2_amounts',
                   'tx3_amounts', 'tx4_amounts', 'tx5_amounts',
                   'output_addresses', 'timeouts', 'pubkeys',
-                  'coinswap_fee', 'blinding_amount', 'bitcoin_fee']
+                  'coinswap_fee', 'blinding_amount', 'bitcoin_fee',
+                  'tx01_confirm_wait']
 
     def trigger_complete(func):
         """triggers setting of all transaction amounts
@@ -1223,6 +1223,7 @@ class CoinSwapPublicParameters(object):
                  blinding_amount=None,
                  coinswap_fee=None,
                  bitcoin_fee=None,
+                 tx01_confirm_wait=None,
                  timeoutdata=None,
                  addressdata=None,
                  pubkeydata=None):
@@ -1239,6 +1240,7 @@ class CoinSwapPublicParameters(object):
         self.set_bitcoin_fee(bitcoin_fee)
         self.set_blinding_amount(blinding_amount)
         self.set_base_amount(base_amount)
+        self.tx01_confirm_wait = tx01_confirm_wait
         self.timeouts = {}
         self.pubkeys = {}
         self.tx0_amount = None
@@ -1270,6 +1272,9 @@ class CoinSwapPublicParameters(object):
     @trigger_complete
     def set_blinding_amount(self, amt):
         self.blinding_amount = amt
+
+    def set_tx01_confirm_wait(self, wait):
+        self.tx01_confirm_wait = wait
 
     def set_fee_policy(self, fp):
         """Note that the fee policy attribute is only
@@ -1379,7 +1384,8 @@ class CoinSwapPublicParameters(object):
             self.set_pubkey(k, v)
 
     def is_complete(self):
-        return self.pubkeys_complete and self.addresses_complete and self.timeouts_complete
+        return all([self.pubkeys_complete, self.addresses_complete,
+                    self.timeouts_complete, self.tx01_confirm_wait])
 
     def set_timeout(self, key, blockheight):
         assert tx in ["LOCK0", "LOCK1"]

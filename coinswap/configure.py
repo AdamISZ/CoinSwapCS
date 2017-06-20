@@ -221,6 +221,8 @@ maximum_amount = 500000000
 #blockheight).
 server_locktime_range = 10,50
 client_locktime_range = 20,100
+#client must choose the number of blocks to wait for confirmation of TX0, TX1.
+tx01_confirm_range = 2, 4
 #to reduce load/complexity, an upper limit on the number of concurrent coinswaps
 maximum_concurrent_coinswaps = 3
 #**FEES**

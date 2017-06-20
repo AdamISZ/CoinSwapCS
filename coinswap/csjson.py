@@ -15,7 +15,7 @@ from .base import (get_current_blockheight, CoinSwapPublicParameters,
                    prepare_ecdsa_msg, FeePolicy)
 from .alice import CoinSwapAlice
 from .carol import CoinSwapCarol
-from .configure import get_log, cs_single
+from .configure import get_log, cs_single, get_network
 from twisted.internet import defer  
 
 cslog = get_log()
@@ -139,6 +139,9 @@ class CoinSwapCarolJSONServer(jsonrpc.JSONRPC):
         serverlockmin, serverlockmax = [int(x) for x in serverlockrange.split(",")]
         clientlockrange = c.get("SERVER", "client_locktime_range")
         clientlockmin, clientlockmax = [int(x) for x in clientlockrange.split(",")]
+        tx01_confirm_range = c.get("SERVER", "tx01_confirm_range")
+        tx01_confirm_min, tx01_confirm_max = [int(
+            x) for x in tx01_confirm_range.split(",")]
         lock0 = c.getint("TIMEOUT", "lock_client")
         status = {}
         self.refresh_carols()
@@ -166,6 +169,9 @@ class CoinSwapCarolJSONServer(jsonrpc.JSONRPC):
                                                          "max": serverlockmax},
                                          "lock_client": {"min": clientlockmin,
                                                          "max": clientlockmax}}
+        status["tx01_confirm_wait"] = {"min": tx01_confirm_min,
+                                       "max": tx01_confirm_max}
+        status["testnet"] = True if get_network() else False
         return status
 
     def jsonrpc_status(self):

@@ -201,6 +201,8 @@ maximum_amount = 500000000
 #blockheight).
 server_locktime_range = 10,50
 client_locktime_range = 20,100
+#client must choose the number of blocks to wait for confirmation of TX0, TX1.
+tx01_confirm_range = 2, 4
 #to reduce load/complexity, an upper limit on the number of concurrent coinswaps
 maximum_concurrent_coinswaps = 3
 #**FEES**
@@ -238,6 +240,13 @@ The blinding amount (`minimum_`, `maximum_blinding_amount`) helps to obscure the
 client, but be aware that it means more of your coins are "spent" (back to you) in
 transactions. This has implications for the coins you are storing. Note that clients
 will have their own *minimum* required blinding amount, so it's a tradeoff.
+
+The range in `tx_01_confirm_range` is the number of blocks you'll allow for treating
+as "confirmed" both of TX0 (from the client) and TX1 (from yourself). Note that you'll
+wait for both of these separately: e.g. if the value is 3, you'll wait 3 confirmations
+before treating TX0 as final and only *then* send TX1, and wait 3 blocks confirmation
+again before continuing. In the above setting, you'll accept the client choosing 2, 3
+or 4 for this value.
 
 Finally `server_` and `client_locktime_range` are self-explanatory. The tradeoff here
 is between the security gain of longer blocktimes and liquidity gain from shorter.

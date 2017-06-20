@@ -160,6 +160,11 @@ class CoinSwapAlice(CoinSwapParticipant):
         self.coinswap_parameters.set_pubkey("key_2_2_CB_0", carol_response[0][2])
         self.coinswap_parameters.set_pubkey("key_TX2_secret", carol_response[0][3])
         self.coinswap_parameters.set_pubkey("key_TX3_lock", carol_response[0][4])
+        #on acceptance, fix the tx01confirmwait in the CSPP instance; since we only
+        #do one CS at a time, could stick with the global config, but better to be
+        #consistent with the logic in the server (for code sharing).
+        self.coinswap_parameters.set_tx01_confirm_wait(
+            cs_single().config.getint("TIMEOUT", "tx01_confirm_wait"))
         proposed_fee = carol_response[0][6]
         if self.fee_checker:
             if not self.fee_checker(proposed_fee):
@@ -443,10 +448,11 @@ class CoinSwapAlice(CoinSwapParticipant):
         """Retrieve the server status and validate that it allows
         coinswaps with the chosen parameters to start.
         """
+        c = cs_single().config
         assert self.sm.state == 0
         if not all([x in status.keys() for x in ["source_chain",
                 "destination_chain", "cscs_version", "minimum_amount",
-                "maximum_amount", "busy"]]):
+                "maximum_amount", "busy", "testnet", "tx01_confirm_wait"]]):
             cslog.info("Server gave invalid status response.")
             reactor.stop()
         elif status["source_chain"] != "BTC" or status["destination_chain"] != "BTC":
@@ -458,27 +464,36 @@ class CoinSwapAlice(CoinSwapParticipant):
         elif status["busy"] or status["maximum_amount"] < 0:
             cslog.info("Server is not currently available")
             reactor.stop()
+        elif status["testnet"] == True and c.get(
+            "BLOCKCHAIN", "network") != "testnet":
+            cslog.info("Server is not for correct network (testnet/mainnet)")
+            reactor.stop()
         elif self.coinswap_parameters.base_amount < status["minimum_amount"]:
             cslog.info("Amount too small for server")
             reactor.stop()
         elif self.coinswap_parameters.base_amount > status["maximum_amount"]:
             cslog.info("Amount too large for server")
             reactor.stop()
-        elif cs_single().config.getint("TIMEOUT", "lock_client") > status[
+        elif c.getint("TIMEOUT", "lock_client") > status[
             "locktimes"]["lock_client"]["max"]:
             cslog.info("Our client locktime (lock 0) is too high.")
             reactor.stop()
-        elif cs_single().config.getint("TIMEOUT", "lock_client") < status[
+        elif c.getint("TIMEOUT", "lock_client") < status[
             "locktimes"]["lock_client"]["min"]:
             cslog.info("Our client locktime (lock 0) is too small.")
             reactor.stop()
-        elif cs_single().config.getint("TIMEOUT", "lock_server") > status[
+        elif c.getint("TIMEOUT", "lock_server") > status[
             "locktimes"]["lock_server"]["max"]:
             cslog.info("Our server locktime (lock 1) is too high.")
             reactor.stop()
-        elif cs_single().config.getint("TIMEOUT", "lock_server") < status[
+        elif c.getint("TIMEOUT", "lock_server") < status[
             "locktimes"]["lock_server"]["min"]:
             cslog.info("Our server locktime (lock 1) is too small.")
+            reactor.stop()
+        elif c.getint("TIMEOUT", "tx01_confirm_wait") not in range(
+            status["tx01_confirm_wait"]["min"],
+            status["tx01_confirm_wait"]["max"] + 1):
+            cslog.info("Our tx01 confirm wait is not accepted by the server.")
             reactor.stop()
         else:
             cslog.info("Server settings are compatible, continuing...")

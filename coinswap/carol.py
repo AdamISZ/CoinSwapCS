@@ -136,27 +136,39 @@ class CoinSwapCarol(CoinSwapParticipant):
                 return (False, "wrong CoinSwapCS version, was: " + \
                         str(d["coinswapcs_version"]) + ", should be: " + \
                         str(cs_single().CSCS_VERSION))
-            #Allow client to decide how long to wait, but within limits:
-            if d["tx01_confirm_wait"] < 1 or d["tx01_confirm_wait"] > cs_single(
-                ).config.getint("TIMEOUT","tx01_confirm_wait") + 2:
-                return (False, "Mismatched tx01_confirm_wait, was: " + \
-                str(d["tx01_confirm_wait"]) + ", should be >=1 and less than:" + \
-                cs_single().config.get("TIMEOUT", "tx01_confirm_wait") + 3)
+            #Allow client to decide how long to wait, but within our range:
+            tx01min, tx01max = [int(x) for x in cs_single().config.get(
+                "SERVER", "tx01_confirm_range").split(",")]
+            if not isinstance(d["tx01_confirm_wait"], int):
+                return (False, "Invalid type confirm wait type (should be int)")
+            if d["tx01_confirm_wait"] < tx01min or d["tx01_confirm_wait"] > tx01max:
+                return (False, "Mismatched tx01_confirm_wait, was: " + str(
+                    d["tx01_confirm_wait"]))
+            self.coinswap_parameters.set_tx01_confirm_wait(d["tx01_confirm_wait"])
+            self.sm.reset_timeouts([5, 6], cs_single().one_confirm_timeout * d[
+                "tx01_confirm_wait"])
             if not "key_session" in d:
                 #TODO validate that it's a real pubkey
                 return (False, "no session key from Alice")
             if d["source_chain"] != self.source_chain:
                 return (False, "source chain was wrong: " + d["source_chain"])
             if d["destination_chain"] != self.destination_chain:
-                return (False, "destination chain was wrong: " + d["destination_chain"])
+                return (False, "destination chain was wrong: " + d[
+                    "destination_chain"])
+            if not isinstance(d["amount"], int):
+                return (False, "Invalid amount type (should be int)")
             if d["amount"] < self.minimum_amount:
                 return (False, "Requested amount too small: " + str(d["amount"]))
             if d["amount"] > self.maximum_amount:
                 return (False, "Requested amount too large: " + str(d["amount"]))
             self.coinswap_parameters.set_base_amount(d["amount"])
-            if d["bitcoin_fee"] < estimate_tx_fee((1, 2, 2), 1, txtype='p2shMofN')/2.0:
+            if not isinstance(d["bitcoin_fee"], int):
+                return (False, "Invalid type for bitcoin fee, should be int.")
+            if d["bitcoin_fee"] < estimate_tx_fee((1, 2, 2), 1,
+                                                  txtype='p2shMofN')/2.0:
                 return (False, "Suggested bitcoin transaction fee is too low.")
-            if d["bitcoin_fee"] > estimate_tx_fee((1, 2, 2), 1, txtype='p2shMofN')*2.0:
+            if d["bitcoin_fee"] > estimate_tx_fee((1, 2, 2), 1,
+                                                  txtype='p2shMofN')*2.0:
                 return (False, "Suggested bitcoin transaction fee is too high.")
             self.coinswap_parameters.set_bitcoin_fee(d["bitcoin_fee"])
             #set the session pubkey for authorising future requests

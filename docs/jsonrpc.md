@@ -42,17 +42,32 @@ For now, backout is strictly non-interactive, so there is no need to worry about
 * Return format:
 
 ```json
-   {
-    "busy": true, 
-    "source_chain": "BTC", 
+{
+    "maximum_amount": 200000000,
+    "source_chain": "BTC",
     "fee_policy": {
-        "percent_fee": 0.5, 
+        "percent_fee": 0.5,
         "minimum_fee": 100000
-    }, 
-    "maximum_amount": -1, 
-    "minimum_amount": 5000000, 
-    "destination_chain": "BTC", 
-    "cscs_version": 0.1
+    },
+    "tx01_confirm_wait": {
+        "max": 4,
+        "min": 2
+    },
+    "locktimes": {
+        "lock_server": {
+            "max": 11,
+            "min": 3
+        },
+        "lock_client": {
+            "max": 20,
+            "min": 8
+        }
+    },
+    "testnet": true,
+    "busy": false,
+    "minimum_amount": 5000000,
+    "destination_chain": "BTC",
+    "cscs_version": 0.
 }
 ```
 
@@ -62,11 +77,17 @@ For now, backout is strictly non-interactive, so there is no need to worry about
 
 `busy` - if true, the server is not currently ready to offer to take part in Coinswaps (usually because out of liquidity or doing too many concurrently).
 
+`testnet` - self explanatory, client will reject server that doesn't match his setting (as in config file).
+
 `source_chain`, `destination_chain` - only BTC currently supported. **Note** this is still `BTC` in case of testnet/regtest.
 
 `minimum_amount`, `maximum_amount` - in satoshis, specifiying what size of final output the server will accept for the coinswap. If `maximum_amount` is -1, it means the server does not have sufficient coins available.
 
 `fee_policy` - a set of data specifying how the coinswap fee will be calculated. As of version 0.1, this only supports a minimum fee and a percentage fee (applied as long as it is higher than the minimum).
+
+`tx01_confirm_wait` - how many blocks the server wants to wait to consider each of TX0 and TX1 as final. Client can choose any value from min to max inclusive in his `tx01_confirm_wait` variable in the TIMEOUTS section of the config.
+
+`locktimes` - for each of LOCK0 (client) and LOCK1 (server), what the server accepts as a minimum and maximum in the client request. Note that even if the ranges overlap, LOCK0 must be > LOCK1.
 
 #### `handshake`
 

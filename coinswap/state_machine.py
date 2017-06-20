@@ -116,3 +116,11 @@ class StateMachine(object):
 
     def set_setup(self, callback):
         self.setup = callback
+
+    def reset_timeouts(self, states, timeout):
+        """Needed for the special case where the timeout
+        value is updated after object initialization, due
+        to a negotiation with the counterparty.
+        """
+        for s in states:
+            self.timeouts[s] = timeout
