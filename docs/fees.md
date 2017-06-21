@@ -1,4 +1,4 @@
-(Edited form of [this issue comment](https://github.com/AdamISZ/CoinSwapCS/issues/8#issuecomment-299255003).
+(Edited form of [this issue comment](https://github.com/AdamISZ/CoinSwapCS/issues/8#issuecomment-299255003)).
 
 [Link to sketch diagram](http://imgur.com/a/m54m7), it may help to understand.
 
@@ -96,7 +96,7 @@ Carols cf + bf output from TX2 is going to be small; but by design should be spe
 
 In the case that Carol is unresponsive after the broadcast of TX0, Alice must back
 out via TX2, which still pays Carol cf + bf. In this case Alice will not be very
-happy about paying an unresponsive server, but will not use it again.
+happy about paying an unresponsive server (even though it's a small fee), but will not use it again.
 
 Meanwhile, note that this enforces a cost on Alice, whatever the outcome;
 so there is a cost to DOSing the server. If backout of TX0 was costless,

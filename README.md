@@ -19,6 +19,8 @@ A simple implementation of CoinSwap with Carol as server and Alice as client.
 
 [More background on the ideas](#background)
 
+[More detailed documentation](docs/overview.md)
+
 ### Coinswap basics
 
 CoinSwap was [proposed](https://bitcointalk.org/index.php?topic=321228.0) in 2013
