@@ -1170,6 +1170,9 @@ class CoinSwapParticipant(object):
 
         cslog.info("\n" + "\n".join(report_msg))
 
+        if isinstance(self, CoinSwapCarol) and failed == True:
+            cs_single().bc_interface.stop_unspent_monitoring()
+
         if self.testing_mode:
             #In testing mode the order of finishing of Alice/Carol depends
             #on scenario; this uses a dumb global check to always finish on

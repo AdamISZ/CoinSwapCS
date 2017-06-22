@@ -135,7 +135,7 @@ class BitcoinCoreInterface(BlockchainInterface):
     def rpc(self, method, args):
         if method not in ['importaddress', 'walletpassphrase', 'getaccount',
                           'getrawtransaction', 'gettransaction', 'getblock',
-                          'getblockhash']:
+                          'getblockhash', 'listunspent']:
             cslog.debug('rpc: ' + method + " " + str(args))
         res = self.jsonRpc.call(method, args)
         if isinstance(res, unicode):
@@ -360,12 +360,18 @@ class BitcoinCoreInterface(BlockchainInterface):
 
         self.wallet_synced = True
 
+    def start_unspent_monitoring(self, wallet):
+        self.unspent_monitoring_loop = task.LoopingCall(self.sync_unspent, wallet)
+        self.unspent_monitoring_loop.start(1.0)
+
+    def stop_unspent_monitoring(self):
+        self.unspent_monitoring_loop.stop()
+
     def sync_unspent(self, wallet):
         from jmclient.wallet import BitcoinCoreWallet
 
         if isinstance(wallet, BitcoinCoreWallet):
             return
-        st = time.time()
         wallet_name = self.get_wallet_name(wallet)
         wallet.unspent = {}
 
@@ -386,8 +392,8 @@ class BitcoinCoreInterface(BlockchainInterface):
                 'address': u['address'],
                 'value': int(Decimal(str(u['amount'])) * Decimal('1e8'))
             }
-        et = time.time()
-        cslog.debug('bitcoind sync_unspent took ' + str((et - st)) + 'sec')
+        #useful for testing, but too spammy even for debug:
+        #cslog.debug('length of unspent list: ' + str(len(wallet.unspent.keys())))
 
     def add_tx_notify(self, txd, unconfirmfun, confirmfun, spentfun, notifyaddr,
                       n, timeoutfun=None, c=1):
@@ -479,7 +485,7 @@ class BitcoinCoreInterface(BlockchainInterface):
         txunspent = False
         for r in res2:
             if "txid" not in r:
-                return
+                continue
             if txid == r["txid"] and n == r["vout"]:
                 txunspent = True
                 break

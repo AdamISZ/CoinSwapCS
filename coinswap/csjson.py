@@ -150,14 +150,15 @@ class CoinSwapCarolJSONServer(jsonrpc.JSONRPC):
             status["busy"] = True
         else:
             status["busy"] = False
-        #reset minimum and maximum depending on wallet
-        #we source only from mixdepth 0
+        #real-time balance query; we source only from mixdepth 0
         available_funds = self.wallet.get_balance_by_mixdepth(verbose=False)[0]
-        if available_funds < minimum_amount:
+        #The conservativeness here (switch off if total avail < max
+        #is required for privacy (otherwise we leak our wallet balance in
+        #this costless query). Note that the wallet can be funded while
+        #the server is running.
+        if available_funds < maximum_amount:
             status["busy"] = True
             status["maximum_amount"] = -1
-        elif available_funds < maximum_amount:
-            status["maximum_amount"] = available_funds
         else:
             status["maximum_amount"] = maximum_amount
         status["minimum_amount"] = minimum_amount

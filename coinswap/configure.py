@@ -213,9 +213,11 @@ use_ssl = true
 ssl_private_key_location = 0
 ssl_certificate_location = 0
 #minimum and maximum allowable coinswap amounts, in satoshis;
-#note these are "bounding" values, the actual maximum will change according
-#to what's available in mixdepth 0 of the wallet.
+#amounts to offer for coinswap
 minimum_amount = 5000000
+#note; if your balance in mixdepth 0 falls below this, the server will switch to
+#busy state, and refuse further coinswaps until this changes. We do not change
+#this value dynamically, as it would be a privacy leak.
 maximum_amount = 500000000
 #minimum and maximum allowable server and client locktimes (relative to current
 #blockheight).

@@ -69,6 +69,7 @@ def main_server(options, wallet, test_data=None):
     """
     if test_data and not test_data['use_ssl']:
         cs_single().config.set("SERVER", "use_ssl", "false")
+    cs_single().bc_interface.start_unspent_monitoring(wallet)
     #to allow testing of confirm/unconfirm callback for multiple txs
     if isinstance(cs_single().bc_interface, RegtestBitcoinCoreInterface):
         cs_single().bc_interface.tick_forward_chain_interval = 2
@@ -160,8 +161,9 @@ def main_cs(test_data=None):
     #for testing main script (not test framework), need funds.
     if not test_data and isinstance(
         cs_single().bc_interface, RegtestBitcoinCoreInterface):
-        cs_single().bc_interface.grab_coins(wallet.get_new_addr(0, 0, True), 2.0)
-        wallet.index[0][0] -= 1
+        for i in range(3):
+            cs_single().bc_interface.grab_coins(wallet.get_new_addr(0, 0, True), 2.0)
+        wallet.index[0][0] -= 3
         time.sleep(3)
     sync_wallet(wallet, fast=options.fastsync)
     if test_data:
