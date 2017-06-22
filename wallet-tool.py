@@ -98,15 +98,20 @@ if len(args) < 1:
 
 load_coinswap_config()
 
+wallet_dir = os.path.join(cs_single().homedir, 'wallets')
+if not os.path.exists(wallet_dir):
+    os.makedirs(wallet_dir)
+
 if args[0] in noseed_methods:
     method = args[0]
 else:
     seed = args[0]
     method = ('display' if len(args) == 1 else args[1].lower())
-    if not os.path.exists(os.path.join('wallets', seed)):
+    if not os.path.exists(os.path.join(wallet_dir, seed)):
         wallet = Wallet(seed, None, options.maxmixdepth,
                         options.gaplimit, extend_mixdepth= not maxmixdepth_configured,
-                        storepassword=(method == 'importprivkey'))
+                        storepassword=(method == 'importprivkey'),
+                        wallet_dir=wallet_dir)
     else:
         while True:
             try:
@@ -115,7 +120,8 @@ else:
                         options.maxmixdepth,
                         options.gaplimit,
                         extend_mixdepth=not maxmixdepth_configured,
-                        storepassword=(method == 'importprivkey'))
+                        storepassword=(method == 'importprivkey'),
+                        wallet_dir=wallet_dir)
             except WalletError:
                 print("Wrong password, try again.")
                 continue
@@ -230,7 +236,7 @@ elif method == 'generate' or method == 'recover':
     walletname = raw_input('Input wallet file name (default: wallet.json): ')
     if len(walletname) == 0:
         walletname = 'wallet.json'
-    walletpath = os.path.join('wallets', walletname)
+    walletpath = os.path.join(wallet_dir, walletname)
     # Does a wallet with the same name exist?
     if os.path.isfile(walletpath):
         print('ERROR: ' + walletpath + ' already exists. Aborting.')
