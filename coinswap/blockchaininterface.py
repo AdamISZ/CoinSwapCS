@@ -501,7 +501,10 @@ class BitcoinCoreInterface(BlockchainInterface):
                 try:
                     res = self.rpc("getrawtransaction", [tx["txid"], True])
                 except:
-                    res = self.rpc("getrawtransaction", [tx["txid"], 1])
+                    try:
+                        res = self.rpc("getrawtransaction", [tx["txid"], 1])
+                    except:
+                        res = None
                 if not res:
                     continue
                 for vin in res["vin"]:
