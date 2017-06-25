@@ -9,6 +9,7 @@ import sys
 from ConfigParser import SafeConfigParser, NoOptionError
 
 import jmbitcoin as btc
+
 from jmclient import (get_p2pk_vbyte, get_p2sh_vbyte, JsonRpc, set_config,
                       get_network)
 
@@ -18,7 +19,8 @@ log = logging.getLogger('CoinSwapCS')
 log.setLevel(logging.DEBUG)
 
 debug_silence = [False]
-
+import jmbase.support
+jmbase.support.debug_silence = [True]
 #consoleHandler = logging.StreamHandler(stream=sys.stdout)
 class CoinSwapStreamHandler(logging.StreamHandler):
 
@@ -32,7 +34,6 @@ class CoinSwapStreamHandler(logging.StreamHandler):
 
 consoleHandler = CoinSwapStreamHandler(stream=sys.stdout)
 consoleHandler.setFormatter(logFormatter)
-log.addHandler(consoleHandler)
 
 log.debug('CoinSwapCS logging started.')
 
@@ -184,7 +185,11 @@ backout_fee_multiplier = 1.0
 # defend against small reorganizations:  listunspent_args = [3]
 #   who is at risk of reorganization?:   listunspent_args = [0, 2]
 
-
+[LOGGING]
+# Set the log level for the output to the terminal/console
+# Possible choices: DEBUG / INFO / WARNING / ERROR
+# Log level for the files in the logs-folder will always be DEBUG
+console_log_level = INFO
 
 [SERVER]
 #These settings can be safely ignored if you are running as client ('Alice').
@@ -286,6 +291,15 @@ def load_coinswap_config(config_path=None, bs=None):
     # configure the interface to the blockchain on startup
     global_singleton.bc_interface = get_blockchain_interface_instance(
         global_singleton.config)
+    # set the console log level and initialize console logger
+    try:
+        global_singleton.console_log_level = global_singleton.config.get(
+            "LOGGING", "console_log_level")
+    except (NoSectionError, NoOptionError):
+        print("No log level set, using default level INFO ")
+    print("Setting console level to: ", global_singleton.console_log_level)
+    consoleHandler.setLevel(global_singleton.console_log_level)
+    log.addHandler(consoleHandler)
     #inject the configuration to the underlying jmclient code.
     set_config(global_singleton.config, bcint=global_singleton.bc_interface)
     
@@ -296,19 +310,14 @@ def get_blockchain_interface_instance(_config):
     source = _config.get("BLOCKCHAIN", "blockchain_source")
     network = _config.get("BLOCKCHAIN", "network")
     testnet = network == 'testnet'
+    rpc_host = _config.get("BLOCKCHAIN", "rpc_host")
+    rpc_port = _config.get("BLOCKCHAIN", "rpc_port")
+    rpc_user = _config.get("BLOCKCHAIN", "rpc_user")
+    rpc_password = _config.get("BLOCKCHAIN", "rpc_password")
+    rpc = JsonRpc(rpc_host, rpc_port, rpc_user, rpc_password)
     if source == 'bitcoin-rpc': #pragma: no cover
         #This cannot be tested without mainnet or testnet blockchain (not regtest)
-        rpc_host = _config.get("BLOCKCHAIN", "rpc_host")
-        rpc_port = _config.get("BLOCKCHAIN", "rpc_port")
-        rpc_user = _config.get("BLOCKCHAIN", "rpc_user")
-        rpc_password = _config.get("BLOCKCHAIN", "rpc_password")
-        rpc = JsonRpc(rpc_host, rpc_port, rpc_user, rpc_password)
         bc_interface = BitcoinCoreInterface(rpc, network)
     elif source == 'regtest':
-        rpc_host = _config.get("BLOCKCHAIN", "rpc_host")
-        rpc_port = _config.get("BLOCKCHAIN", "rpc_port")
-        rpc_user = _config.get("BLOCKCHAIN", "rpc_user")
-        rpc_password = _config.get("BLOCKCHAIN", "rpc_password")
-        rpc = JsonRpc(rpc_host, rpc_port, rpc_user, rpc_password)
         bc_interface = RegtestBitcoinCoreInterface(rpc)
     return bc_interface

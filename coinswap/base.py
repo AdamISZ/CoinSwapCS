@@ -712,7 +712,10 @@ class CoinSwapParticipant(object):
         self.tx4_confirmed = False
         self.successful_tx3_redeem = None
         self.consumed_nonces = []
+        #Allows owner to stop tracking.
         self.completed = False
+        #Keep track of when blocks arrive for better logging.
+        self.last_seen_block = None
         #Carol must keep track of coins reserved for usage
         #so as to not select them to spend, twice, concurrently.
         #We only init with a fresh empty list if this is the first
@@ -835,7 +838,7 @@ class CoinSwapParticipant(object):
         #A small delay to account for updates to the mempool.
         reactor.callLater(1.0, self.final_report, complete, failed)
 
-    def backout(self, backoutmsg):
+    def backout(self, backoutmsg, verbose=True):
         from .alice import CoinSwapAlice
         from .carol import CoinSwapCarol
         """Uses current state to decide backing out action.
@@ -844,9 +847,10 @@ class CoinSwapParticipant(object):
         (Alice, Carol) is running in this executable. This
         point is relevant for testing only currently.
         """
-        cslog.info('BACKOUT: ' + backoutmsg)
-        me = "Alice" if isinstance(self, CoinSwapAlice) else "Carol"
-        cslog.info("Current state: " + str(self.sm.state) + ", I am : " + me)
+        if verbose:
+            cslog.info('BACKOUT: ' + backoutmsg)
+            me = "Alice" if isinstance(self, CoinSwapAlice) else "Carol"
+            cslog.info("Current state: " + str(self.sm.state) + ", I am : " + me)
         if self.sm.state == 0:
             #Failure in negotiation; nothing to do
             cslog.info("Failure in parameter negotiation; no action required; "
@@ -880,11 +884,13 @@ class CoinSwapParticipant(object):
                 #redeem on the lock branch.
                 bh = get_current_blockheight()
                 if bh < self.coinswap_parameters.timeouts["LOCK0"] + 1:
-                    cslog.info("Not ready to redeem the funds, "
-                             "waiting for block: " + str(
-                                 self.coinswap_parameters.timeouts["LOCK0"]) + \
-                             ", current block: " + str(bh))
-                    reactor.callLater(3.0, self.backout, backoutmsg)
+                    if not self.last_seen_block or bh > self.last_seen_block:
+                        cslog.info("Not ready to redeem the funds, "
+                        "waiting for block: " + str(
+                        self.coinswap_parameters.timeouts["LOCK0"] + 1) + \
+                        ", current block: " + str(bh))
+                        self.last_seen_block = bh
+                    reactor.callLater(3.0, self.backout, backoutmsg, False)
                     return
                 msg, success = self.tx2.push()
                 if not success:
@@ -996,11 +1002,13 @@ class CoinSwapParticipant(object):
                 #LOCK0.
                 bh = get_current_blockheight()
                 if bh < self.coinswap_parameters.timeouts["LOCK1"] + 1:
-                    cslog.info("Not ready to redeem the funds, "
-                             "waiting for block: " + str(
-                                 self.coinswap_parameters.timeouts["LOCK1"]) + \
-                             ", current block: " + str(bh))
-                    reactor.callLater(3.0, self.backout, backoutmsg)
+                    if not self.last_seen_block or bh > self.last_seen_block:
+                        cslog.info("Not ready to redeem the funds, waiting for "
+                        "block: " + str(
+                        self.coinswap_parameters.timeouts["LOCK1"] + 1) + \
+                        ", current block: " + str(bh))
+                        self.last_seen_block = bh
+                    reactor.callLater(3.0, self.backout, backoutmsg, False)
                     return
                 if bh > self.coinswap_parameters.timeouts["LOCK0"]:
                     cslog.info("CRITICAL WARNING: Too late, counterparty may "
