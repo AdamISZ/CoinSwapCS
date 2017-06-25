@@ -317,6 +317,11 @@ class CoinSwapAlice(CoinSwapParticipant):
         errmsg, success = self.tx0.push()
         if not success:
             return (False, "Failed to push TX0, errmsg: " + errmsg)
+        #Monitor the output address of TX0 by importing
+        cs_single().bc_interface.rpc("importaddress",
+                            [self.tx0.output_address,
+                            cs_single().bc_interface.get_wallet_name(self.wallet),
+                            False])
         return (True, "Pushed TX0 OK: " + self.tx0.txid)
 
     def see_tx0_tx1(self):

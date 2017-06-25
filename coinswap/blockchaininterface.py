@@ -13,6 +13,7 @@ import time
 import urllib
 import urllib2
 import traceback
+import binascii
 from decimal import Decimal
 from twisted.internet import reactor, task
 
@@ -135,7 +136,7 @@ class BitcoinCoreInterface(BlockchainInterface):
     def rpc(self, method, args):
         if method not in ['importaddress', 'walletpassphrase', 'getaccount',
                           'getrawtransaction', 'gettransaction', 'getblock',
-                          'getblockhash', 'listunspent']:
+                          'getblockhash', 'listunspent', 'gettxout']:
             cslog.debug('rpc: ' + method + " " + str(args))
         res = self.jsonRpc.call(method, args)
         if isinstance(res, unicode):
@@ -404,20 +405,6 @@ class BitcoinCoreInterface(BlockchainInterface):
         to trigger "confirmed" callback on number of confirmations c. Also checks
         for spending (if spentfun is not None) of the outpoint n.
         """
-        #check if any receiving addresses are already imported, if not,
-        #import into wallet, so that rpc calls (`gettransaction`)
-        #can correctly function. This latter case occurs where we are sending
-        #to an external address.
-        one_addr_imported = False
-        for outs in txd['outs']:
-            addr = btc.script_to_address(outs['script'], get_p2pk_vbyte())
-            if self.rpc('getaccount', [addr]) != '':
-                one_addr_imported = True
-                break
-        if not one_addr_imported:
-            #Note we import into a random account, distinct from our own wallet.
-            self.rpc('importaddress', [notifyaddr, 'coinswapcs-notify', False])
-        tx_output_set = set([(sv['script'], sv['value']) for sv in txd['outs']])
         loop = task.LoopingCall(self.tx_watcher, txd, unconfirmfun, confirmfun,
                                 spentfun, c, n)
         txid = btc.txhash(btc.serialize(txd))
@@ -439,9 +426,22 @@ class BitcoinCoreInterface(BlockchainInterface):
             self.tx_watcher_loops[txid][0].stop()
             timeoutfun(txd, txid)
 
+    def get_deser_from_gettransaction(self, rpcretval):
+        """Get full transaction deserialization from a call
+        to `gettransaction`
+        """
+        if not "hex" in rpcretval:
+            cslog.info("Malformed gettransaction output")
+            return None
+        #str cast for unicode
+        hexval = str(rpcretval["hex"])
+        return btc.deserialize(hexval)
+
     def tx_watcher(self, txd, unconfirmfun, confirmfun, spentfun, c, n):
-        """Called at a polling interval, checks if the given transaction
-        is (a) broadcast and (b) confirmed and stops if number of confs = c.
+        """Called at a polling interval, checks if the given deserialized
+        transaction (which must be fully signed) is (a) broadcast, (b) confirmed
+        and (c) spent from at index n, and notifies confirmation if number
+        of confs = c.
         TODO: Deal with conflicts correctly. Here just abandons monitoring.
         """
         txid = btc.txhash(btc.serialize(txd))
@@ -499,22 +499,37 @@ class BitcoinCoreInterface(BlockchainInterface):
             for tx in txlist[::-1]:
                 #changed syntax in 0.14.0; allow both syntaxes
                 try:
-                    res = self.rpc("getrawtransaction", [tx["txid"], True])
+                    res = self.rpc("gettransaction", [tx["txid"], True])
                 except:
                     try:
-                        res = self.rpc("getrawtransaction", [tx["txid"], 1])
+                        res = self.rpc("gettransaction", [tx["txid"], 1])
                     except:
+                        #This should never happen (gettransaction is a wallet rpc).
+                        cslog.info("Failed any gettransaction call")
                         res = None
                 if not res:
                     continue
-                for vin in res["vin"]:
-                    if not "txid" in vin:
+                deser = self.get_deser_from_gettransaction(res)
+                if deser is None:
+                    continue
+                for vin in deser["ins"]:
+                    if not "outpoint" in vin:
                         #coinbases
                         continue
-                    if vin["txid"] == txid and vin["vout"] == n:
+                    if vin["outpoint"]["hash"] == txid and vin["outpoint"]["index"] == n:
                         #recover the deserialized form of the spending transaction.
-                        res2 = self.rpc("getrawtransaction", [tx["txid"]])
-                        spentfun(btc.deserialize(res2), vin["txid"])
+                        cslog.info("We found a spending transaction: " + \
+                                   btc.txhash(binascii.unhexlify(res["hex"])))
+                        res2 = self.rpc("gettransaction", [tx["txid"], True])
+                        spending_deser = self.get_deser_from_gettransaction(res2)
+                        if not spending_deser:
+                            cslog.info("ERROR: could not deserialize spending tx.")
+                            #Should never happen, it's a parsing bug.
+                            #No point continuing to monitor, we just hope we
+                            #can extract the secret by scanning blocks.
+                            wl[3] = True
+                            return
+                        spentfun(spending_deser, vin["outpoint"]["hash"])
                         wl[3] = True
                         return
 

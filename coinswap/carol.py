@@ -368,6 +368,11 @@ class CoinSwapCarol(CoinSwapParticipant):
         errmsg, success = self.tx1.push()
         if not success:
             return (False, "Failed to push TX1")
+        #Monitor the output address of TX1 by importing
+        cs_single().bc_interface.rpc("importaddress",
+                            [self.tx1.output_address,
+                            cs_single().bc_interface.get_wallet_name(self.wallet),
+                            False])
         #Wait until TX1 seen before confirming phase2 ready.
         self.loop = task.LoopingCall(self.check_for_phase1_utxos,
                                          [self.tx1.txid + ":" + str(
@@ -484,6 +489,9 @@ class CoinSwapCarol(CoinSwapParticipant):
         broadcast but not-already-spent. Returns True if succeeds
         in broadcasting a redemption (to tx5_address), False otherwise.
         """
+        if not self.tx3.txid:
+            cslog.info("Failed to find TX3 txid, cannot redeem from it")
+            return False
         #**CONSTRUCT TX3-redeem-timeout; use a fresh address to redeem
         dest_addr = self.wallet.get_new_addr(0, 1, True)
         self.tx3redeem = CoinSwapRedeemTX23Timeout(

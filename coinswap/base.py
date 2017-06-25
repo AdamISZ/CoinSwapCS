@@ -289,10 +289,10 @@ class CoinSwapTX(object):
         Note this can occur due to other counterparty, not ourselves.
         """
         cslog.info("Triggered unconfirm update for txid: " + txid)
-
-        if self.txid:
-            if not txid == self.txid:
-                cslog.info("WARNING: malleation detected.")
+        if not self.txid:
+            #For our created transactions, self.txid is only set when
+            #we push/broadcast, so must be set here if we did not push.
+            self.set_txid()
         self.is_broadcast = True
 
     def spent_update(self, txd, txid):
@@ -302,12 +302,12 @@ class CoinSwapTX(object):
 
     def confirm_update(self, txd, txid, confs):
         """Note this can occur due to other counterparty, not ourselves.
+        Note also that this must account for rare cases where this is called
+        without unconfirmed being called first.
         """
-        if self.txid:
-            if not txid == self.txid:
-                cslog.info("WARNING: malleation detected.")
+        if not self.txid:
+            self.set_txid()
         self.is_confirmed = True
-        #Confirmed implies broadcast (this is used in backout logic)
         self.is_broadcast = True
 
     def signature_form(self, index):
@@ -748,6 +748,10 @@ class CoinSwapParticipant(object):
         tx.spent_update,
         tx.output_address,
         tx.pay_out_index)
+        cs_single().bc_interface.rpc("importaddress",
+                 [tx.output_address,
+                  cs_single().bc_interface.get_wallet_name(self.wallet),
+                  False])
 
     def generate_privkey(self):
         #always hex, with compressed flag
@@ -899,7 +903,7 @@ class CoinSwapParticipant(object):
                 tx23_redeem.sign_at_index(self.keyset["key_TX2_lock"][0], 0)
                 msg, success = tx23_redeem.push()
                 if not success:
-                    cslog.info("RPC error message: ", msg)
+                    cslog.info("RPC error message: " + msg)
                     cslog.info("Failed to broadcast TX2 redeem; here is raw form: ")
                     cslog.info(tx23_redeem.fully_signed_tx)
                 else:
@@ -927,7 +931,7 @@ class CoinSwapParticipant(object):
                 msg, success = tx23_secret.push()
                 cslog.info(tx23_secret)
                 if not success:
-                    cslog.info("RPC error message: ", msg)
+                    cslog.info("RPC error message: " + msg)
                     cslog.info("Failed to broadcast TX3 redeem; here is raw form: ")
                     cslog.info(tx23_secret.fully_signed_tx)
                 else:
