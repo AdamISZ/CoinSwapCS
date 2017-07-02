@@ -213,7 +213,8 @@ class CoinSwapTX(object):
                   'output_script', 'change_script', 'output_amount',
                   'change_amount', 'locktime', 'outs', 'pay_out_index',
                   'base_form', 'fully_signed_tx', 'completed', 'txid',
-                  'is_spent', 'is_confirmed', 'is_broadcast', 'spending_tx']
+                  'is_spent', 'is_confirmed', 'is_broadcast', 'spending_tx',
+                  'segwit']
 
     def __init__(self,
                  utxo_ins,
@@ -225,9 +226,18 @@ class CoinSwapTX(object):
                  signing_redeem_scripts=None,
                  signing_pubkeys=None,
                  signatures=None,
-                 locktime=None):
-        if utxo_ins == None:
-            utxo_ins = []
+                 locktime=None,
+                 segwit=False):
+        #Flag for transactions spending segwit inputs
+        self.segwit = segwit
+        if self.segwit:
+            cslog.info("Trying to set amounts with: " + str(utxo_ins))
+            self.utxo_ins = utxo_ins.keys()
+            self.utxo_ins_amts = [x["value"] for x in utxo_ins.values()]
+            cslog.info("Set amounts to: " + str(self.utxo_ins_amts))
+            cslog.info("Set utxoins to: " + str(self.utxo_ins))
+        else:
+            self.utxo_ins = utxo_ins
         if signing_pubkeys == None:
             signing_pubkeys = [[]]*len(utxo_ins)
         if signing_redeem_scripts == None:
@@ -236,7 +246,6 @@ class CoinSwapTX(object):
             signatures = [[]]*len(utxo_ins)
         #Signing pubkeys and signatures are lists of lists;
         #caller must ensure correct ordering thereof.
-        self.utxo_ins = utxo_ins
         self.output_address = output_address
         self.output_script = btc.address_to_script(self.output_address)
         self.output_amount = output_amount
@@ -312,17 +321,40 @@ class CoinSwapTX(object):
 
     def signature_form(self, index):
         assert len(self.signing_redeem_scripts) >= index + 1
-        return btc.signature_form(self.base_form, index,
+        if self.segwit:
+            x = btc.segwit_signature_form(btc.deserialize(self.base_form), index,
+                                             self.signing_redeem_scripts[index],
+                                             self.utxo_ins_amts[index])
+            return x
+        else:
+            return btc.signature_form(self.base_form, index,
                                   self.signing_redeem_scripts[index])
     
     def sign_at_index(self, privkey, in_index):
         """Default sign function signs for a single pubkey input.
+        Segwit transactions are assumed *all* segwit in for now; this is only
+        for TX0/1 so we control inputs TODO.
         Can be overridden by subclasses.
         """
         assert btc.privkey_to_pubkey(privkey) == self.signing_pubkeys[in_index][0]
-        sigform = self.signature_form(in_index)
+        if self.segwit:
+            script = btc.pubkey_to_p2sh_p2wpkh_script(self.signing_pubkeys[in_index][0])
+            scriptCode = "76a914"+btc.hash160(binascii.unhexlify(
+                self.signing_pubkeys[in_index][0]))+"88ac"
+            sigform = btc.segwit_signature_form(btc.deserialize(self.base_form),
+                                                in_index, scriptCode,
+                                                self.utxo_ins_amts[in_index])
+        else:
+            sigform = self.signature_form(in_index)
         sig = btc.ecdsa_tx_sign(sigform, privkey)
-        assert btc.verify_tx_input(self.base_form, in_index,
+        if self.segwit:
+            assert btc.verify_tx_input(self.base_form, in_index,
+                                       self.signing_redeem_scripts[in_index],
+                                       sig, self.signing_pubkeys[in_index][0],
+                                       witness="deadbeef",
+                                       amount=self.utxo_ins_amts[in_index])
+        else:
+            assert btc.verify_tx_input(self.base_form, in_index,
                                    self.signing_redeem_scripts[in_index], sig,
                                    self.signing_pubkeys[in_index][0])
         self.signatures[in_index] = [sig]
@@ -341,13 +373,20 @@ class CoinSwapTX(object):
             return False
     
     def attach_signatures(self):
-        """Default function is specific to p2pkh inputs.
+        """Default function is specific to p2pkh inputs or p2wpkh inputs.
+        For the latter, they must *all* be of that type for now TODO.
         """
         assert self.fully_signed()
         dtx = btc.deserialize(self.base_form)
         for i in range(len(self.utxo_ins)):
-            dtx["ins"][i]["script"] = btc.serialize_script([self.signatures[i][0],
-                                       self.signing_pubkeys[i][0]])
+            if self.segwit:
+                dtx["ins"][i]["script"] = "16" + btc.pubkey_to_p2sh_p2wpkh_script(
+                    self.signing_pubkeys[i][0])
+                dtx["ins"][i]["txinwitness"] = [self.signatures[i][0],
+                                                self.signing_pubkeys[i][0]]
+            else:
+                dtx["ins"][i]["script"] = btc.serialize_script(
+                    [self.signatures[i][0], self.signing_pubkeys[i][0]])
         self.fully_signed_tx = btc.serialize(dtx)
     
     def set_txid(self):
@@ -431,7 +470,8 @@ class CoinSwapTX01(CoinSwapTX):
                  change_amount=None,
                  signing_pubkeys=None,
                  signing_redeem_scripts=None,
-                 signatures=None):
+                 signatures=None,
+                 segwit=True):
         obj = cls()
         #Non-optional arguments are used to construct the 2of2 address:
         scr, addr = msig_data_from_pubkeys([pubkey1, pubkey2], 2)
@@ -442,7 +482,8 @@ class CoinSwapTX01(CoinSwapTX):
                                            change_amount=change_amount,
                                            signing_redeem_scripts=signing_redeem_scripts,
                                            signing_pubkeys=signing_pubkeys,
-                                           signatures=signatures)
+                                           signatures=signatures,
+                                           segwit=segwit)
         return obj
 
 class CoinSwapSpend2_2(CoinSwapTX):

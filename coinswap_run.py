@@ -1,7 +1,7 @@
 #!/home/adam/virtualenvs/escrow/bin/python
 from __future__ import print_function
 import jmbitcoin as btc
-from jmclient import Wallet, WalletError, estimate_tx_fee, validate_address
+from jmclient import SegwitWallet, WalletError, estimate_tx_fee, validate_address
 from jmbase.support import get_password
 from coinswap import (cs_single, CoinSwapPublicParameters, CoinSwapAlice,
                       CoinSwapCarol, CoinSwapJSONRPCClient, sync_wallet,
@@ -143,13 +143,13 @@ def main_cs(test_data=None):
     max_mix_depth = 3
     wallet_dir = os.path.join(cs_single().homedir, 'wallets')
     if not os.path.exists(os.path.join(wallet_dir, wallet_name)):
-        wallet = Wallet(wallet_name, None, max_mix_depth, 6,
+        wallet = SegwitWallet(wallet_name, None, max_mix_depth, 6,
                         wallet_dir=wallet_dir)
     else:
         while True:
             try:
                 pwd = get_password("Enter wallet decryption passphrase: ")
-                wallet = Wallet(wallet_name, pwd, max_mix_depth, 6,
+                wallet = SegwitWallet(wallet_name, pwd, max_mix_depth, 6,
                                 wallet_dir=wallet_dir)
             except WalletError:
                 print("Wrong password, try again.")

@@ -314,12 +314,13 @@ class CoinSwapCarol(CoinSwapParticipant):
         self.tx1 = CoinSwapTX01.from_params(
             self.coinswap_parameters.pubkeys["key_2_2_CB_0"],
                                 self.coinswap_parameters.pubkeys["key_2_2_CB_1"],
-                                utxo_ins=self.initial_utxo_inputs.keys(),
+                                utxo_ins=self.initial_utxo_inputs,
                                 signing_pubkeys=signing_pubkeys,
                                 signing_redeem_scripts=signing_redeemscripts,
                                 output_amount=self.coinswap_parameters.tx1_amount,
                                 change_address=change_address,
-                                change_amount=change_amount)
+                                change_amount=change_amount,
+                                segwit=True)
         #sign and hold signature, recover txid
         self.tx1.signall(self.signing_privkeys)
         self.tx1.attach_signatures()

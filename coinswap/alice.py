@@ -226,12 +226,13 @@ class CoinSwapAlice(CoinSwapParticipant):
         change_address = self.wallet.get_internal_addr(0)
         self.tx0 = CoinSwapTX01.from_params(self.coinswap_parameters.pubkeys["key_2_2_AC_0"],
                                 self.coinswap_parameters.pubkeys["key_2_2_AC_1"],
-                                utxo_ins=self.initial_utxo_inputs.keys(),
+                                utxo_ins=self.initial_utxo_inputs,
                                 signing_pubkeys=signing_pubkeys,
                                 signing_redeem_scripts=signing_redeemscripts,
                                 output_amount=self.coinswap_parameters.tx0_amount,
                                 change_address=change_address,
-                                change_amount=change_amount)
+                                change_amount=change_amount,
+                                segwit=True)
         #sign and hold signature, recover txid
         self.tx0.signall(self.signing_privkeys)
         self.tx0.attach_signatures()
