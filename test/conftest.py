@@ -87,4 +87,4 @@ def setup(request):
     local_command([bitcoin_path + "bitcoin-cli", "-regtest",
                    "-rpcuser=" + bitcoin_rpcusername,
                    "-rpcpassword=" + bitcoin_rpcpassword,
-                   "-conf=" + bitcoin_conf, "generate", "101"])
+                   "-conf=" + bitcoin_conf, "generate", "601"])

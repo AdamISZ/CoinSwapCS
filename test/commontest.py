@@ -15,7 +15,7 @@ data_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0, os.path.join(data_dir))
 
 from coinswap import (cs_single, get_log)
-from jmclient import (Wallet, estimate_tx_fee)
+from jmclient import (SegwitWallet, Wallet, estimate_tx_fee)
 from jmbase import chunks
 import jmbitcoin as btc
 
@@ -87,7 +87,7 @@ def make_wallets(n,
         if test_wallet:
             w = TestWallet(seeds[i], None, max_mix_depth=3, pwd=passwords[i])
         else:
-            w = Wallet(seeds[i], None, max_mix_depth=3)
+            w = SegwitWallet(seeds[i], None, max_mix_depth=3)
         wallets[i + start_index] = {'seed': seeds[i],
                                     'wallet': w}
         for j in range(3):
