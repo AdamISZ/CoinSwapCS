@@ -300,12 +300,14 @@ def load_coinswap_config(config_path=None, bs=None):
     print("Setting console level to: ", global_singleton.console_log_level)
     consoleHandler.setLevel(global_singleton.console_log_level)
     log.addHandler(consoleHandler)
+    #always uses segwit wallet (not optional)
+    global_singleton.config.set("POLICY", "segwit", "true")
     #inject the configuration to the underlying jmclient code.
     set_config(global_singleton.config, bcint=global_singleton.bc_interface)
     
 
 def get_blockchain_interface_instance(_config):
-    from .blockchaininterface import BitcoinCoreInterface, \
+    from jmclient import BitcoinCoreInterface, \
         RegtestBitcoinCoreInterface
     source = _config.get("BLOCKCHAIN", "blockchain_source")
     network = _config.get("BLOCKCHAIN", "network")

@@ -7,7 +7,8 @@ import os
 data_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0, os.path.join(data_dir))
 
-from coinswap import cs_single, get_log, load_coinswap_config, sync_wallet
+from coinswap import cs_single, get_log, load_coinswap_config
+from jmclient import sync_wallet
 from bad_participants import (BadAlice, BadCarol,
                               AliceBadHandshake, AliceWrongSecret,
                               AliceBadNegotiate, AliceBadCompleteNegotiation,

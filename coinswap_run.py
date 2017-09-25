@@ -1,12 +1,13 @@
 #!/home/adam/virtualenvs/escrow/bin/python
 from __future__ import print_function
 import jmbitcoin as btc
-from jmclient import SegwitWallet, WalletError, estimate_tx_fee, validate_address
+from jmclient import (SegwitWallet, WalletError, estimate_tx_fee,
+                      validate_address, sync_wallet, BitcoinCoreInterface,
+                      RegtestBitcoinCoreInterface)
 from jmbase.support import get_password
 from coinswap import (cs_single, CoinSwapPublicParameters, CoinSwapAlice,
-                      CoinSwapCarol, CoinSwapJSONRPCClient, sync_wallet,
-                      get_current_blockheight, RegtestBitcoinCoreInterface,
-                      BitcoinCoreInterface, get_log, load_coinswap_config,
+                      CoinSwapCarol, CoinSwapJSONRPCClient,
+                      get_current_blockheight, get_log, load_coinswap_config,
                       get_coinswap_parser, CoinSwapCarolJSONServer, start_tor)
 
 from twisted.internet import reactor

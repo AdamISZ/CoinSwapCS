@@ -5,7 +5,6 @@ from twisted.internet import reactor, task
 from txjsonrpc.web.jsonrpc import Proxy
 from txjsonrpc.web import jsonrpc
 from twisted.web import server
-from .btscript import *
 from .configure import get_log, cs_single
 from .state_machine import StateMachine
 from decimal import Decimal
@@ -789,9 +788,10 @@ class CoinSwapParticipant(object):
         btc.deserialize(tx.fully_signed_tx),
         tx.unconfirm_update,
         tx.confirm_update,
-        tx.spent_update,
         tx.output_address,
-        tx.pay_out_index)
+        spentfun=tx.spent_update,
+        vb=get_p2sh_vbyte(),
+        n=tx.pay_out_index)
         cs_single().bc_interface.rpc("importaddress",
                  [tx.output_address,
                   cs_single().bc_interface.get_wallet_name(self.wallet),
@@ -1175,7 +1175,7 @@ class CoinSwapParticipant(object):
         """Simple text summary of coinswap in co-operative and
         non-co-operative case, for both sides.
         """
-        from .blockchaininterface import sync_wallet
+        from jmclient import sync_wallet
         from .alice import CoinSwapAlice
         from .carol import CoinSwapCarol
         self.completed = True

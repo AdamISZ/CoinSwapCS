@@ -2,7 +2,6 @@ from __future__ import print_function
 import jmbitcoin as btc
 from jmclient import estimate_tx_fee
 from twisted.internet import reactor, task
-from .btscript import *
 from .configure import get_log
 from decimal import Decimal
 import binascii

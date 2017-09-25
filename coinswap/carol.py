@@ -5,7 +5,6 @@ from twisted.internet import reactor, task
 from txjsonrpc.web.jsonrpc import Proxy
 from txjsonrpc.web import jsonrpc
 from twisted.web import server
-from .btscript import *
 from .configure import get_log
 from decimal import Decimal
 import binascii
