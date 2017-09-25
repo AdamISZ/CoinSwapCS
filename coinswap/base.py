@@ -142,8 +142,8 @@ def create_hash_script(redeemer_pubkey, hashes):
     """
     script = []
     for h in hashes:
-        script += [OP_HASH160, h, OP_EQUALVERIFY]
-    script += [redeemer_pubkey, OP_CHECKSIG]
+        script += [btc.OP_HASH160, h, btc.OP_EQUALVERIFY]
+    script += [redeemer_pubkey, btc.OP_CHECKSIG]
     return script
 
 def generate_escrow_redeem_script(hashed_secret, recipient_pubkey, locktime,
@@ -156,11 +156,11 @@ def generate_escrow_redeem_script(hashed_secret, recipient_pubkey, locktime,
     hashed_secret, recipient_pubkey, refund_pubkey = [binascii.unhexlify(
         x) for x in hashed_secret, recipient_pubkey, refund_pubkey]
     script = create_hash_script(recipient_pubkey, [hashed_secret])
-    redeem_script = [OP_DEPTH, OP_2, OP_EQUAL, OP_IF] + script + [OP_ELSE,
+    redeem_script = [btc.OP_DEPTH, btc.OP_2, btc.OP_EQUAL, btc.OP_IF] + script + [btc.OP_ELSE,
                                         int_to_tx_ser(locktime),
-                                        OP_CHECKLOCKTIMEVERIFY, OP_DROP,
-                                        refund_pubkey, OP_CHECKSIG,
-                                        OP_ENDIF]
+                                        btc.OP_CHECKLOCKTIMEVERIFY, btc.OP_DROP,
+                                        refund_pubkey, btc.OP_CHECKSIG,
+                                        btc.OP_ENDIF]
     rss = btc.serialize_script(redeem_script)
     return rss
 
