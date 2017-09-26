@@ -370,9 +370,7 @@ class CoinSwapCarol(CoinSwapParticipant):
             return (False, "Failed to push TX1")
         #Monitor the output address of TX1 by importing
         cs_single().bc_interface.rpc("importaddress",
-                            [self.tx1.output_address,
-                            cs_single().bc_interface.get_wallet_name(self.wallet),
-                            False])
+                            [self.tx1.output_address, "joinmarket-notify", False])
         #Wait until TX1 seen before confirming phase2 ready.
         self.loop = task.LoopingCall(self.check_for_phase1_utxos,
                                          [self.tx1.txid + ":" + str(

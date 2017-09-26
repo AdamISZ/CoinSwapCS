@@ -792,10 +792,14 @@ class CoinSwapParticipant(object):
         spentfun=tx.spent_update,
         vb=get_p2sh_vbyte(),
         n=tx.pay_out_index)
+        #in order for the spent callback to trigger, it's necessary
+        #that the outpoint's address is imported into the watch only
+        #wallet of the instance. But note we should *not* import this
+        #into our main wallet as this will confuse fast sync calls (which
+        #rely on the assumption that addresses which were imported are
+        #in the HD path).
         cs_single().bc_interface.rpc("importaddress",
-                 [tx.output_address,
-                  cs_single().bc_interface.get_wallet_name(self.wallet),
-                  False])
+                 [tx.output_address,"joinmarket-notify",False])
 
     def generate_privkey(self):
         #always hex, with compressed flag
