@@ -302,6 +302,19 @@ def load_coinswap_config(config_path=None, bs=None):
     log.addHandler(consoleHandler)
     #always uses segwit wallet (not optional)
     global_singleton.config.set("POLICY", "segwit", "true")
+    #The underlying jmclient 'unconfirm_timeout_sec' config setting
+    #in the TIMEOUT section is required for monitoring whether an
+    #expected-to-be-broadcast tx is actually broadcast and seen on the
+    #network. Although propagation_buffer is not *exactly* the same
+    #concept, since that also applies for synchronising the seeing of
+    #confirmations, it is a closely related delay. Using the same value
+    #for both is sensible.
+    global_singleton.config.set("TIMEOUT", "unconfirm_timeout_sec",
+            global_singleton.config.get("TIMEOUT", "propagation_buffer"))
+    #Confirm_timeout_hours on the other hand must be set arbitrarily
+    #high; we can backout early in case of ultra slow confirmation (which
+    #the code specifically avoids by setting high requirements on fees).
+    global_singleton.config.set("TIMEOUT", "confirm_timeout_hours", "24")
     #inject the configuration to the underlying jmclient code.
     set_config(global_singleton.config, bcint=global_singleton.bc_interface)
     
