@@ -79,8 +79,8 @@ The comments mostly give enough context. Note that for the critical values
 
 About `tx_01_confirm_wait`: this is mostly to defend against re-orgs, which are rare
 events in Bitcoin. An outstanding code edit will require the server to specify its min-max,
-which you will have to be in-range of; for now it defaults to 2. For mainnet I suspect anything
-from 2 to 6 will be reasonable.
+which you will have to be in-range of; for now it defaults to 2. For mainnet I suspect around 2-6 will
+be reasonable for a quick-style swap with a much larger value for a "slow/secure" style swap.
 
 ### SESSIONS
 
