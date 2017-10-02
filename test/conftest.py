@@ -1,4 +1,3 @@
-#!/home/adam/virtualenvs/escrow/bin/python
 import pytest
 import os
 import time
