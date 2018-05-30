@@ -24,12 +24,6 @@ from occbase import (OCCTemplate, OCCTemplateTX, OCCTx, btc_to_satoshis,
 
 cslog = get_log()
 
-"""
-Seed : 029d907fd47e02bf53c895f5ea1b8c
-Seed2: 3c5107c75f2a14b214a86bc1fe1529
-
-"""
-
 class OCCClientProtocol(amp.AMP):
     def __init__(self, factory, wallet):
         self.wallet = wallet
@@ -85,9 +79,9 @@ class OCCClientProtocol(amp.AMP):
                                          (0, 1, self.counterparty_ins[0][1],
                                           self.counterparty_ins[0][0], self.counterparty_ins[0][3]),
                                          (2, 0, self.template_inputs[1][1],
-                                          self.template_inputs[0][0], self.template_inputs[0][3]),
+                                          self.template_inputs[1][0], self.template_inputs[1][3]),
                                          (3, 1, self.counterparty_ins[1][1],
-                                          self.counterparty_ins[0][0], self.counterparty_ins[0][3])]
+                                          self.counterparty_ins[1][0], self.counterparty_ins[1][3])]
                              }
         self.template = OCCTemplate(template_data_set)
         #pre-choose our keys for template
@@ -152,10 +146,12 @@ class OCCClientProtocol(amp.AMP):
                 if x.spk_type == "NN" or 1 in tx.keys["ins"][j]:
                     #pop removes the used signature for the next iteration
                     tx.include_signature(j, 1, self.counterparty_sigs.pop(0))
+            tx.attach_signatures()
             
         for tx in self.realbackouttxs:
             for j in range(len(tx.ins)):
                 tx.include_signature(j, 1, self.counterparty_sigs.pop(0))
+            tx.attach_signatures()
         #Now all transactions except Funding are validly, fully signed,
         #so we are safe to complete signing on the Funding and broadcast
         #that one first. We'll print out all transactions for broadcast,
@@ -171,13 +167,14 @@ class OCCClientProtocol(amp.AMP):
             cslog.info("Failed to push transaction, reason: " + reason)
         else:
             cslog.info("Succeeded push, txid: " + txid)
-        cslog.info("Here are the rest of the transactions to push:")
-        for i, tx in enumerate(self.realtxs[1:]):
-            cslog.info("Transaction number: " + str(i))
-            cslog.info(str(tx))
-        for i, tx in enumerate(self.realbackouttxs):
-            cslog.info("Backout transaction number: " + str(i))
-            cslog.info(str(tx))        
+            with open("occresults.txt", "wb") as f:
+                f.write("Here are the rest of the transactions to push:\n")
+                for i, tx in enumerate(self.realtxs[1:]):
+                    f.write("Transaction number: " + str(i)+"\n")
+                    f.write(str(tx)+"\n")
+                for i, tx in enumerate(self.realbackouttxs):
+                    f.write("Backout transaction number: " + str(i)+"\n")
+                    f.write(str(tx)+"\n")
         return {"accepted": True}
 
 class OCCClientProtocolFactory(protocol.ClientFactory):

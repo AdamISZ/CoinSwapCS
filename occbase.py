@@ -405,6 +405,7 @@ class OCCTx(object):
             if self.txid:
                 msg.append("Txid: " + self.txid)
             tx = self.fully_signed_tx
+        msg.append(tx)
         dtx = btc.deserialize(tx)
         return pformat(dtx) + "\n" + "\n".join(msg)
 
