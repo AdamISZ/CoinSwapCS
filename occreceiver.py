@@ -55,9 +55,7 @@ class OCCServerProtocol(amp.AMP):
     @OCCSetup.responder
     def on_SETUP(self, amtdata):
         amtdata = json.loads(amtdata)
-        print("Calling getutxosfromwallet with amtdata: ", amtdata)
         self.our_ins, msg = get_utxos_from_wallet(self.wallet, amtdata)
-        print("Got ourins: ", self.our_ins)
         if not self.our_ins:
             raise Exception("Failed to get utxos, reason: " + str(msg))
         d = self.callRemote(OCCSetupResponse,
@@ -73,7 +71,6 @@ class OCCServerProtocol(amp.AMP):
         self.template = OCCTemplate(template_data)
         nkeys_us = self.template.keys_needed(1)
         our_keys, our_addresses = get_our_keys(self.wallet, nkeys_us)
-        print("after get our keys we got: ", len(our_keys), our_keys)
         self.lt = get_current_blockheight() + 100
         self.realtxs, self.realbackouttxs = create_realtxs_from_template(self.wallet,
                                                                self.template, 2, 1, self.lt)
@@ -97,7 +94,6 @@ class OCCServerProtocol(amp.AMP):
         for tx in self.realbackouttxs:
             for j in range(len(tx.ins)):
                 sigs_to_send.append(tx.sign_at_index(j))
-        print("Sending receiver keys, num: ", len(our_keys), our_keys)
         d = self.callRemote(OCCKeysResponse,
                             our_keys=json.dumps(our_keys),
                             our_sigs=json.dumps(sigs_to_send))
@@ -177,12 +173,6 @@ def main(finalizer=None, finalizer_args=None):
                 print("Failed to load wallet, error message: " + repr(e))
                 sys.exit(0)
             break
-    #for testing main script (not test framework), need funds.
-    #if isinstance(cs_single().bc_interface, RegtestBitcoinCoreInterface):
-    #    for i in range(3):
-    #        cs_single().bc_interface.grab_coins(wallet.get_new_addr(0, 0, True), 2.0)
-    #    wallet.index[0][0] -= 3
-    #    time.sleep(3)
     #funding the wallet with outputs specifically suitable for the starting point.
     funding_utxo_addr = wallet.get_new_addr(0, 0, True)
     bob_promise_utxo_addr = wallet.get_new_addr(0, 0, True)

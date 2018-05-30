@@ -4,7 +4,7 @@ Commands defining client-server (daemon)
 messaging protocol.
 Used for AMP asynchronous messages.
 """
-from twisted.protocols.amp import Integer, String, Unicode, Boolean, Command
+from twisted.protocols.amp import String, Command, Boolean
 
 class DaemonNotReady(Exception):
     pass

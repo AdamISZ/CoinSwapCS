@@ -68,7 +68,6 @@ class OCCClientProtocol(amp.AMP):
     def on_OCC_SETUP_RESPONSE(self, template_ins):
         self.counterparty_ins = json.loads(template_ins)
         #create template
-        print("received from counterparty: " + str(self.counterparty_ins))
         template_data_set = {"n": 2, "N": 5,
                              "out_list": [(0, 0, -1, 1.0), (1, 0, 0, 0.4), (1, 1, -1, 0.4),
                                           (1, 2, -1, 0.2), (2, 0, 1, 2/15.0), (2, 1, 0, 2/15.0),
@@ -102,7 +101,6 @@ class OCCClientProtocol(amp.AMP):
     @OCCKeysResponse.responder
     def on_OCC_KEYS_RESPONSE(self, our_keys, our_sigs):
         counterparty_keys = json.loads(our_keys)
-        print("The counterparty sent these number, keys: ", len(counterparty_keys), str(counterparty_keys))
         self.counterparty_sigs = json.loads(our_sigs)
         self.lt = get_current_blockheight() + 100
         self.realtxs, self.realbackouttxs = create_realtxs_from_template(
@@ -130,7 +128,6 @@ class OCCClientProtocol(amp.AMP):
         for tx in self.realbackouttxs:
             for j in range(len(tx.ins)):
                 sigs_to_send.append(tx.sign_at_index(j))
-        print("We are sending these sigs: ", sigs_to_send)
         d = self.callRemote(OCCSigs,
                             our_sigs=json.dumps(sigs_to_send))
         self.defaultCallbacks(d)
@@ -138,6 +135,7 @@ class OCCClientProtocol(amp.AMP):
 
     @OCCSigsResponse.responder
     def on_OCC_SIGS_RESPONSE(self, funding_sigs):
+        ba = cs_single().config.getint("POLICY", "broadcast_all")
         funding_sigs = json.loads(funding_sigs)
         #Verify all, including funding, then broadcast.
         for i, tx in enumerate(self.realtxs[1:]):
@@ -146,12 +144,14 @@ class OCCClientProtocol(amp.AMP):
                 if x.spk_type == "NN" or 1 in tx.keys["ins"][j]:
                     #pop removes the used signature for the next iteration
                     tx.include_signature(j, 1, self.counterparty_sigs.pop(0))
-            tx.attach_signatures()
+            if not ba == 1:
+                tx.attach_signatures()
             
         for tx in self.realbackouttxs:
             for j in range(len(tx.ins)):
                 tx.include_signature(j, 1, self.counterparty_sigs.pop(0))
-            tx.attach_signatures()
+            if not ba == 1:
+                tx.attach_signatures()
         #Now all transactions except Funding are validly, fully signed,
         #so we are safe to complete signing on the Funding and broadcast
         #that one first. We'll print out all transactions for broadcast,
@@ -175,7 +175,52 @@ class OCCClientProtocol(amp.AMP):
                 for i, tx in enumerate(self.realbackouttxs):
                     f.write("Backout transaction number: " + str(i)+"\n")
                     f.write(str(tx)+"\n")
+        if ba == 1:
+            #we'll push all the others, one by one
+            for i in range(len(self.realtxs)-1):
+                reactor.callLater(float(i/10.0), self.realtxs[i+1].push)
+            reactor.callLater(5.0, self.final_checks)
         return {"accepted": True}
+
+    def final_checks(self):
+        """Check that our keys have received the right funds
+        in the wallet (all the single-owned outpoints to p2sh-p2wpkh
+        outpoints should contain utxos that own the intended number
+        of coins).
+        """
+        match = True
+        total_coins = 0
+        for i, tx in enumerate(self.template.txs):
+            txid = self.realtxs[i].txid
+            for j, tout in enumerate(tx.outs):
+                if tout.counterparty == 0:
+                    expected_amount = tout.amount
+                    print("We expected this amount out: ", expected_amount)
+                    actual_key = self.realtxs[i].keys["outs"][j][0]
+                    actual_address = btc.pubkey_to_p2sh_p2wpkh_address(actual_key, get_p2sh_vbyte())
+                    #direct query on blockchain for the transaction,
+                    #then check if it pays to our address and in what amount
+                    res = cs_single().bc_interface.rpc('gettxout', [txid, j, True])
+                    if not ("scriptPubKey" in res and "addresses" in res["scriptPubKey"]):
+                        print("Failed to query the tx: ", txid)
+                    found_address = str(res["scriptPubKey"]["addresses"][0])
+                    if not found_address == actual_address:
+                        print("Error, transaction, vout: ",
+                              txid, j,
+                              "has address: ", found_address,
+                              ", but should have been address: ",
+                              actual_address)
+                    print("Amount received was: ", res["value"],
+                          " at address: ", actual_address)
+                    sat_value = btc_to_satoshis(res["value"])
+                    total_coins += res["value"]
+                    if not sat_value == expected_amount or not actual_address == found_address:
+                        match = False
+        if match:
+            print("Success! Received back total coins: ", total_coins)
+        else:
+            print("Failure! Not all expected coins received, see above summary.")
+        reactor.stop()
 
 class OCCClientProtocolFactory(protocol.ClientFactory):
     protocol = OCCClientProtocol
@@ -188,7 +233,7 @@ class OCCClientProtocolFactory(protocol.ClientFactory):
 
 def start_reactor(host, port, factory, ish=True):
     startLogging(sys.stdout)
-    reactor.connectTCP(host, port, factory)
+    reactor.connectTCP(host, int(port), factory)
     reactor.run(installSignalHandlers=ish)
     if isinstance(cs_single().bc_interface, RegtestBitcoinCoreInterface):
         cs_single().bc_interface.shutdown_signal = True
@@ -199,7 +244,11 @@ if __name__ == "__main__":
     (options, args) = parser.parse_args()
     load_coinswap_config()
     wallet_name = args[0]
-    serv, port = sys.argv[1:3]
+    serv, port = args[1:3]
+    if len(sys.argv) > 4:
+        cs_single().config.set("POLICY", "broadcast_all", "1")
+    else:
+        cs_single().config.set("POLICY", "broadcast_all", "0")
     max_mix_depth = 3
     wallet_dir = os.path.join(cs_single().homedir, 'wallets')
     if not os.path.exists(os.path.join(wallet_dir, wallet_name)):
@@ -218,12 +267,18 @@ if __name__ == "__main__":
                 print("Failed to load wallet, error message: " + repr(e))
                 sys.exit(0)
             break
+
     #funding the wallet with outputs specifically suitable for the starting point.
     funding_utxo_addr = wallet.get_new_addr(0, 0, True)
     alice_promise_utxo_addr = wallet.get_new_addr(0, 0, True)
+    #TODO even with a fixed template, the template must be parametrized
+    #by the input and promise values, this can be read in from arguments
+    #and then applied to these grabs (which are only for POC anyway);
+    #next step would be to have the parametrization based on wallet
+    #contents (still needs ranges though).
     cs_single().bc_interface.grab_coins(funding_utxo_addr, 1.0)
     cs_single().bc_interface.grab_coins(alice_promise_utxo_addr, 0.3)
     sync_wallet(wallet, fast=options.fastsync)
     factory = OCCClientProtocolFactory(wallet)
-    start_reactor("localhost", 19735, factory)
+    start_reactor(serv, port, factory)
     print('done')

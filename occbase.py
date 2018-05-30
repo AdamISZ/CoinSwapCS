@@ -220,9 +220,6 @@ class OCCTx(object):
         for a particular input, that input's redeem script will
         be automatically generated, ready for signing.
         """
-        #print("Running apply key on this transaction: " + repr(self.template))
-        #print("Current keyset is: ", self.keys)
-        #print("Trying to apply key with insouts, idx, cpr: ", insouts, idx, cpr)
         self.keys[insouts][idx][cpr] = key
         if insouts == "ins":
             #if all keys are available for this input,
@@ -253,10 +250,6 @@ class OCCTx(object):
         Segwit assumed; uses only p2sh-p2wpkh for sole-owned,
         p2wsh for co-owned.
         """
-        print("******STARTTING SIGNATINDEX*******")
-        print("on transaction: ", str(self.template))
-        print("for index: ", in_index)
-        print("Working with self.keys: ", self.keys)
         #the pubkey we're signing against:
         pub = self.keys["ins"][in_index][self.n]
         #the wallet holds the keys for p2sh-p2wpkh addresses directly.
@@ -471,7 +464,6 @@ class OCCTemplateTX(object):
         lastly the amount *fraction* of the output assigned (from which
         exact amounts are immediately calculated based on the input sum).
         """
-        print("working with ins list: " + str(self.ins))
         total_input_amount = sum([x.amount for x in self.ins])
         self.total_payable = total_input_amount - self.min_fee #TODO
         #We allow explicit Outpoint insertion in case the caller
@@ -536,7 +528,6 @@ class OCCTemplate(object):
         #loop starting at 0 for N transactions
         #For 0 we construct a transaction with inputs all inflow objects for index 0.
         funding_ins = [Outpoint(x[4], x[1], x[2], None, x[3]) for x in self.inflows if x[0] == 0]
-        print("Got funding ins: " + str(funding_ins))
         funding_tx = OCCTemplateTX([x for x in self.out_list if x[0] == 0], funding_ins, [0, 0])
         self.txs = [funding_tx]
         for i in range(self.N)[1:]:
@@ -554,7 +545,6 @@ class OCCTemplate(object):
         #Assign the balances in proportion to each party's owed coins.
         self.backout_txs = []
         for i, t in enumerate(self.txs[1:]):
-            print("Starting for loop for tx: ", t)
             if t.contains_promise():
                 backout_outs = []
                 backout_ins = self.txs[i].co_owned_outputs()
@@ -573,7 +563,6 @@ class OCCTemplate(object):
                     adjusted_X = X - fee
                     assigned_redemption = int(round(Decimal(adjusted_X) * prop))
                     if assigned_redemption > 0:
-                        print("Creating an outpoint for the backout tx of value: ", assigned_redemption)
                         backout_outs.append(Outpoint(idx, j, assigned_redemption))
                         idx += 1
                 self.backout_txs.append(OCCTemplateTX(backout_outs, backout_ins,
@@ -704,31 +693,3 @@ def apply_keys_to_template(wallet, template, realtxs, realbackouttxs,
             if to.counterparty == cp:
                 realbackouttxs[i].apply_key(keys_c.pop(0), "outs", j, cp)
     return realtxs, realbackouttxs
-
-def get_counterparty_setup(serv, port, amtdata):
-    sckt = create_sock(serv, int(port))
-    #send Act One
-    sckt.send(json.dumps(amtdata))
-    rspns = recv_socket(sckt)
-    print("Got response to get counterparty setup: ", rspns)
-    return json.loads(rspns)
-
-def get_counterparty_keys(serv, port, template_inputs,
-                          our_keys, template_data_set):
-    tosend = {"template_ins": template_inputs,
-              "our_keys": our_keys,
-              "template": template_data_set}
-    sckt = create_sock(serv, int(port))
-    sckt.send(json.dumps(tosend))
-    rspns = recv_socket(sckt)
-    print("Got response from get counterparty keys: ", rspns)
-    return json.loads(rspns)
-
-def get_counterparty_funding_sigs(serv, port, sigs_to_send):
-    sckt = create_sock(serv, int(port))
-    sckt.send(json.dumps(sigs_to_send))
-    rspns = recv_socket(sckt)
-    print("Got response from get counterparty funding sigs: ", rspns)
-    return json.loads(rspns)
-
-    
